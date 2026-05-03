@@ -260,14 +260,8 @@ To add or modify questions, edit the `FINOPS_EVENT_POOL` array in `index.html`.
 
 ---
 
-## 📝 License
-
-Internal Broadcom / CloudHealth project. Not for public distribution.
-
----
-
 ## 👋 Questions?
 
-Contact Govind / Tanuja / Pratheep — the FinOps game team.
+Contact Govind / Tanuja / Siva — the FinOps game team.
 
 **Good luck, and may your cloud spend be ever optimized!** 🚀💰
