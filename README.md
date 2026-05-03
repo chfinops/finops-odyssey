@@ -14,7 +14,7 @@ An 8-bit space arcade game built for **CloudHealth's FinOpsX 2026 conference boo
 ```
 finops-odyssey/
 ├── index.html              # The game
-├── admin.html              # Booth staff portal
+├── ch-booth-staff.html              # Booth staff portal
 ├── supabase_setup.sql      # One-time database setup
 └── README.md               # This file
 ```
@@ -30,7 +30,7 @@ finops-odyssey/
 4. On mission success, get a **3-digit combination number** drawn from a configurable pool
 5. Take a screenshot, bring it to the booth, try it on the physical lock to win
 
-**Booth staff** uses `admin.html` to:
+**Booth staff** uses `ch-booth-staff.html` to:
 - See live odds (1 in N, where N = pool size)
 - View the pool of valid numbers + which have been allocated
 - Pick a number to set on the physical lock
@@ -69,13 +69,13 @@ This creates 3 tables (`scores`, `pool_config`, `allocations`), seeds an initial
 - Go to **Authentication → Users**
 - Click **Invite user** for each staff member who'll work the booth
 - They'll get an email with a password setup link
-- Only invited users can log into `admin.html`
+- Only invited users can log into `ch-booth-staff.html`
 
 ---
 
 ### 2. Configure the HTML files
 
-Open both `index.html` and `admin.html` in a text editor. Near the top of the `<script>` block, replace the placeholder values with your credentials from step 1c:
+Open both `index.html` and `ch-booth-staff.html` in a text editor. Near the top of the `<script>` block, replace the placeholder values with your credentials from step 1c:
 
 ```javascript
 const SUPABASE_URL = 'https://YOUR_PROJECT.supabase.co';
@@ -137,7 +137,7 @@ node_modules/
 #### c) Done
 Every `git push` to `main` auto-deploys. You'll have:
 - **Game**: `https://your-app.vercel.app/`
-- **Admin**: `https://your-app.vercel.app/admin.html`
+- **Admin**: `https://your-app.vercel.app/ch-booth-staff.html`
 
 ---
 
@@ -145,7 +145,7 @@ Every `git push` to `main` auto-deploys. You'll have:
 
 ### Pre-conference
 
-1. **Adjust the pool size** in admin.html based on prize quantity:
+1. **Adjust the pool size** in ch-booth-staff.html based on prize quantity:
    - Pool size = how many unique numbers exist
    - Lock combo is set to ONE of those numbers
    - Lower pool = higher win rate
@@ -153,7 +153,7 @@ Every `git push` to `main` auto-deploys. You'll have:
 
 2. **Test the flow** end-to-end:
    - Play a game on a phone, get a combo
-   - Verify it shows up as "allocated" in admin.html
+   - Verify it shows up as "allocated" in ch-booth-staff.html
    - Verify the lock combo (one you pick) actually opens the lock
 
 ### During the conference
@@ -166,7 +166,7 @@ Every `git push` to `main` auto-deploys. You'll have:
 | Down to last prize | 100 | 1 in 100 |
 
 **To change pool size mid-conference:**
-1. Open `admin.html` → log in
+1. Open `ch-booth-staff.html` → log in
 2. Enter new size in "Reset & Resize Pool"
 3. Confirm the warning (clears all current allocations)
 4. **Pick a number from the new grid** → set lock to it
@@ -180,7 +180,7 @@ Every `git push` to `main` auto-deploys. You'll have:
 5. If it matches → prize. If not → consolation (e.g. swag, sticker)
 
 **To remove a leaderboard entry** (offensive name, competitor, test):
-1. Open `admin.html` → log in
+1. Open `ch-booth-staff.html` → log in
 2. Find the entry in the leaderboard table
 3. Click **REMOVE** → confirm
 
