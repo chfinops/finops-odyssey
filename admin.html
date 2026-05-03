@@ -539,12 +539,12 @@
   </div>
 </div>
 
-<script src="config.js"></script>
 <script>
 'use strict';
 
 // ── Supabase ──────────────────────────────────────────────────────
-// SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY loaded from config.js (gitignored)
+const SUPABASE_URL = 'https://YOUR_PROJECT.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_YOUR_KEY_HERE';
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
 // ── Auth ──────────────────────────────────────────────────────────

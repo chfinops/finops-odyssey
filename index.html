@@ -502,7 +502,6 @@
   </div>
 </div>
 
-<script src="config.js"></script>
 <script>
 'use strict';
 
@@ -1536,7 +1535,8 @@ function render() {
 
 // ── Overlays ──────────────────────────────────────────────────────
 // ── Supabase config ───────────────────────────────────────────────
-// SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY loaded from config.js (gitignored)
+const SUPABASE_URL = 'https://YOUR_PROJECT.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_YOUR_KEY_HERE';
 let db = null;
 try {
   db = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
