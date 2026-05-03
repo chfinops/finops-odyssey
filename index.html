@@ -1536,10 +1536,10 @@ function render() {
 
 // ── Overlays ──────────────────────────────────────────────────────
 // ── Supabase config ───────────────────────────────────────────────
-// SUPABASE_URL and SUPABASE_ANON_KEY loaded from config.js (gitignored)
+// SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY loaded from config.js (gitignored)
 let db = null;
 try {
-  db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  db = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 } catch(e) { console.warn('Supabase not loaded, running in local mode'); }
 
 // ── Pool state (fetched from Supabase) ───────────────────────────

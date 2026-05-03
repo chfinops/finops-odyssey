@@ -59,12 +59,12 @@ finops-odyssey/
 This creates 3 tables (`scores`, `pool_config`, `allocations`), seeds an initial 100-number pool, and configures Row Level Security policies.
 
 #### c) Get your API credentials
-- Go to **Settings → API**
+- Go to **Settings → API Keys**
 - Copy these two values:
   - **Project URL** (e.g. `https://abcdefg.supabase.co`)
-  - **anon public key** (the long JWT string)
+  - **Publishable key** (starts with `sb_publishable_...`) — safe for client-side use with RLS
 
-> ⚠️ The anon key is **safe to put in client-side HTML** — RLS policies prevent unauthorized writes. Never expose the **service_role** key.
+> ⚠️ Never expose the **Secret key** — it bypasses RLS and gives full DB access.
 
 #### d) Invite booth staff
 - Go to **Authentication → Users**
@@ -84,7 +84,7 @@ Open `config.js` and fill in your values from step 1c:
 
 ```javascript
 const SUPABASE_URL = 'https://YOUR_PROJECT.supabase.co';
-const SUPABASE_ANON_KEY = 'YOUR_ANON_KEY';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_YOUR_KEY_HERE';
 ```
 
 > ⚠️ `config.js` is gitignored — never commit it. Both `index.html` and `admin.html` load it automatically via `<script src="config.js">`.
@@ -210,7 +210,7 @@ Every `git push` to `main` auto-deploys. You'll have:
 ### "Score won't save" / "Leaderboard empty"
 - Open browser dev console (F12)
 - Look for Supabase errors
-- Most common: wrong `SUPABASE_URL` or `SUPABASE_ANON_KEY` in `config.js`, or `config.js` not present
+- Most common: wrong `SUPABASE_URL` or `SUPABASE_PUBLISHABLE_KEY` in `config.js`, or `config.js` not present
 - Or: RLS policies didn't get created — re-run `supabase_setup.sql`
 
 ### "Admin login fails"

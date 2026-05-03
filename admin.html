@@ -544,8 +544,8 @@
 'use strict';
 
 // ── Supabase ──────────────────────────────────────────────────────
-// SUPABASE_URL and SUPABASE_ANON_KEY loaded from config.js (gitignored)
-const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY loaded from config.js (gitignored)
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
 // ── Auth ──────────────────────────────────────────────────────────
 async function doLogin() {
