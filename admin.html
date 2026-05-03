@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>FinOps Odyssey · Admin Portal</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Orbitron:wght@700;900&family=Inter:wght@400;500;600&display=swap');
+
+  :root {
+    --ch-orange: #FF6B1A;
+    --ch-blue: #1E88E5;
+    --nasa-red: #FC3D21;
+    --nasa-blue: #0B3D91;
+    --gold: #FFB300;
+    --cyan: #00E5FF;
+    --green: #39FF14;
+    --bg: #020409;
+    --bg2: #0a1428;
+    --bg3: #0d1f3c;
+    --star: #F0F4FF;
+    --muted: rgba(200,216,232,0.6);
+    --border: rgba(0,229,255,0.25);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--star);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+  }
+
+  /* ── Login screen ── */
+  #login-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    gap: 20px;
+    background: radial-gradient(ellipse at 50% 30%, rgba(11,61,145,0.5) 0%, transparent 60%);
+  }
+
+  .logo {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 900;
+    font-size: 28px;
+    letter-spacing: 4px;
+    background: linear-gradient(180deg, var(--gold), var(--ch-orange));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .login-box {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    padding: 32px;
+    width: 340px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .login-box h2 {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 9px;
+    color: var(--cyan);
+    letter-spacing: 2px;
+    text-align: center;
+    margin-bottom: 4px;
+  }
+
+  input[type="email"], input[type="password"] {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    color: var(--star);
+    padding: 12px 14px;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    width: 100%;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  input[type="email"]:focus, input[type="password"]:focus {
+    border-color: var(--cyan);
+  }
+
+  .btn {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 9px;
+    padding: 14px;
+    cursor: pointer;
+    border: none;
+    letter-spacing: 1px;
+    transition: all 0.1s;
+    width: 100%;
+  }
+
+  .btn-primary {
+    background: var(--ch-orange);
+    color: var(--star);
+    border: 2px solid var(--gold);
+  }
+  .btn-primary:hover { background: var(--gold); color: var(--bg); }
+
+  .btn-danger {
+    background: rgba(252,61,33,0.15);
+    color: var(--nasa-red);
+    border: 1px solid var(--nasa-red);
+  }
+  .btn-danger:hover { background: var(--nasa-red); color: var(--star); }
+
+  .btn-secondary {
+    background: var(--bg3);
+    color: var(--cyan);
+    border: 1px solid var(--border);
+    font-size: 8px;
+    padding: 10px;
+  }
+  .btn-secondary:hover { border-color: var(--cyan); background: rgba(0,229,255,0.08); }
+
+  .btn-sm {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 7px;
+    padding: 7px 12px;
+    cursor: pointer;
+    border: none;
+    letter-spacing: 1px;
+    transition: all 0.1s;
+  }
+
+  .err { color: var(--nasa-red); font-size: 11px; text-align: center; min-height: 16px; }
+
+  /* ── Main admin layout ── */
+  #admin-screen { display: none; }
+
+  .top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 24px;
+    background: linear-gradient(90deg, var(--nasa-blue), rgba(255,107,26,0.8));
+    border-bottom: 1px solid var(--border);
+  }
+
+  .top-bar .brand {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 900;
+    font-size: 14px;
+    letter-spacing: 3px;
+  }
+
+  .top-bar .user-info {
+    font-size: 11px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .logout-btn {
+    font-size: 10px;
+    padding: 6px 14px;
+    background: rgba(252,61,33,0.2);
+    color: var(--nasa-red);
+    border: 1px solid var(--nasa-red);
+    cursor: pointer;
+    font-family: 'Press Start 2P', monospace;
+    letter-spacing: 1px;
+  }
+  .logout-btn:hover { background: var(--nasa-red); color: var(--star); }
+
+  .admin-body {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    padding: 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  @media (max-width: 768px) {
+    .admin-body { grid-template-columns: 1fr; }
+  }
+
+  .card {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .card-full { grid-column: 1 / -1; }
+
+  .card-title {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 8px;
+    color: var(--cyan);
+    letter-spacing: 2px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  /* ── Pool config ── */
+  .odds-display {
+    text-align: center;
+    padding: 16px;
+    background: rgba(255,179,0,0.08);
+    border: 1px solid var(--gold);
+  }
+
+  .odds-big {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 28px;
+    font-weight: 900;
+    color: var(--gold);
+    letter-spacing: 3px;
+  }
+
+  .odds-label {
+    font-size: 9px;
+    color: var(--muted);
+    margin-top: 4px;
+    font-family: 'Press Start 2P', monospace;
+  }
+
+  .reset-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px;
+    background: rgba(252,61,33,0.06);
+    border: 1px solid rgba(252,61,33,0.3);
+  }
+
+  .reset-form label {
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .reset-form input[type="number"] {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    color: var(--star);
+    padding: 10px;
+    font-size: 16px;
+    width: 100%;
+    outline: none;
+  }
+
+  .reset-warning {
+    font-size: 10px;
+    color: var(--nasa-red);
+    line-height: 1.6;
+  }
+
+  /* ── Pool grid ── */
+  .pool-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+    gap: 6px;
+    max-height: 320px;
+    overflow-y: auto;
+    padding: 4px;
+  }
+
+  .pool-cell {
+    padding: 8px 4px;
+    text-align: center;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    border: 1px solid var(--border);
+    background: var(--bg2);
+    color: var(--star);
+    letter-spacing: 1px;
+    transition: all 0.15s;
+    cursor: default;
+    position: relative;
+  }
+
+  .pool-cell.allocated {
+    background: rgba(255,179,0,0.12);
+    border-color: var(--gold);
+    color: var(--gold);
+  }
+
+  .pool-cell.allocated::after {
+    content: '✓';
+    position: absolute;
+    top: 2px;
+    right: 3px;
+    font-size: 8px;
+    color: var(--gold);
+  }
+
+  .pool-stats {
+    display: flex;
+    gap: 16px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .pool-stats span { color: var(--star); font-weight: 600; }
+
+  /* ── Leaderboard ── */
+  .lb-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+
+  .lb-table th {
+    text-align: left;
+    padding: 8px 10px;
+    font-size: 9px;
+    color: var(--cyan);
+    font-family: 'Press Start 2P', monospace;
+    letter-spacing: 1px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(0,0,0,0.3);
+  }
+
+  .lb-table td {
+    padding: 9px 10px;
+    border-bottom: 1px solid rgba(0,229,255,0.08);
+    color: var(--star);
+    vertical-align: middle;
+  }
+
+  .lb-table tr:hover td { background: rgba(0,229,255,0.04); }
+
+  .rank-badge {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 700;
+    font-size: 13px;
+    color: var(--cyan);
+  }
+
+  .score-val {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 700;
+    color: var(--green);
+  }
+
+  .ts-val { color: var(--muted); font-size: 11px; }
+
+  .btn-remove {
+    background: rgba(252,61,33,0.1);
+    color: var(--nasa-red);
+    border: 1px solid rgba(252,61,33,0.4);
+    padding: 5px 10px;
+    font-size: 9px;
+    cursor: pointer;
+    font-family: 'Press Start 2P', monospace;
+    letter-spacing: 1px;
+    transition: all 0.1s;
+  }
+  .btn-remove:hover { background: var(--nasa-red); color: var(--star); }
+
+  .empty-state {
+    text-align: center;
+    padding: 24px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .status-bar {
+    font-size: 10px;
+    padding: 8px 12px;
+    border-left: 3px solid var(--green);
+    background: rgba(57,255,20,0.06);
+    color: var(--green);
+    display: none;
+  }
+
+  .status-bar.error {
+    border-color: var(--nasa-red);
+    background: rgba(252,61,33,0.06);
+    color: var(--nasa-red);
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: var(--bg2); }
+  ::-webkit-scrollbar-thumb { background: var(--border); }
+
+  .confirm-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(2,4,9,0.92);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .confirm-modal.show { display: flex; }
+  .confirm-box {
+    background: var(--bg3);
+    border: 2px solid var(--nasa-red);
+    padding: 28px;
+    max-width: 360px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .confirm-box h3 {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 9px;
+    color: var(--nasa-red);
+    letter-spacing: 2px;
+  }
+  .confirm-box p { font-size: 12px; color: var(--muted); line-height: 1.7; }
+  .confirm-btns { display: flex; gap: 10px; }
+</style>
+</head>
+<body>
+
+<!-- ── Login ── -->
+<div id="login-screen">
+  <div class="logo">CLOUDHEALTH</div>
+  <div style="font-family:'Press Start 2P',monospace;font-size:8px;color:var(--cyan);letter-spacing:3px">FINOPS ODYSSEY · STAFF PORTAL</div>
+
+  <div class="login-box">
+    <h2>🔒 STAFF LOGIN</h2>
+    <input type="email" id="email" placeholder="staff@cloudhealth.com" autocomplete="email" />
+    <input type="password" id="password" placeholder="Password" autocomplete="current-password" />
+    <div class="err" id="login-err"></div>
+    <button class="btn btn-primary" onclick="doLogin()">ACCESS PORTAL</button>
+  </div>
+
+  <div style="font-size:10px;color:var(--muted)">CloudHealth FinOpsX 2026 · Authorized Staff Only</div>
+</div>
+
+<!-- ── Admin ── -->
+<div id="admin-screen">
+  <div class="top-bar">
+    <div class="brand">FINOPS ODYSSEY</div>
+    <div class="user-info">
+      <span id="user-email-display"></span>
+      <button class="logout-btn" onclick="doLogout()">LOGOUT</button>
+    </div>
+  </div>
+
+  <div class="admin-body">
+
+    <!-- Pool odds display -->
+    <div class="card">
+      <div class="card-title">
+        <span>🎰 WIN ODDS (LIVE)</span>
+        <button class="btn-secondary btn-sm" onclick="loadAll()">↻ REFRESH</button>
+      </div>
+      <div class="odds-display">
+        <div class="odds-big">1 IN <span id="odds-live">—</span></div>
+        <div class="odds-label">CURRENT POOL SIZE</div>
+      </div>
+      <div class="pool-stats">
+        Pool numbers: <span id="stat-total">—</span> &nbsp;·&nbsp;
+        Allocated: <span id="stat-allocated">—</span>
+      </div>
+      <div id="status-msg" class="status-bar"></div>
+    </div>
+
+    <!-- Reset / resize pool -->
+    <div class="card">
+      <div class="card-title">⚙ RESET & RESIZE POOL</div>
+      <div class="reset-form">
+        <label>New pool size (how many unique numbers to offer, 1–999)</label>
+        <input type="number" id="new-pool-size" min="1" max="999" placeholder="e.g. 50" />
+        <div class="reset-warning">
+          ⚠ RESET clears ALL allocations and regenerates the number pool.<br>
+          Pool size can ONLY be changed during reset.<br>
+          This cannot be undone.
+        </div>
+        <button class="btn btn-danger" onclick="confirmReset()">RESET POOL + SET SIZE</button>
+      </div>
+    </div>
+
+    <!-- Pool number grid -->
+    <div class="card card-full">
+      <div class="card-title">
+        <span>🔢 COMBINATION POOL · SET LOCK TO ONE OF THESE</span>
+        <div style="font-size:8px;color:var(--gold)">✓ = allocated to a player</div>
+      </div>
+      <div class="pool-grid" id="pool-grid">
+        <div class="empty-state">Loading pool...</div>
+      </div>
+    </div>
+
+    <!-- Leaderboard management -->
+    <div class="card card-full">
+      <div class="card-title">
+        <span>🏆 LEADERBOARD MANAGEMENT</span>
+        <span style="font-size:7px;color:var(--muted)">REMOVE = hides from public board</span>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="lb-table">
+          <thead>
+            <tr>
+              <th>RANK</th>
+              <th>CALLSIGN</th>
+              <th>SCORE</th>
+              <th>PHASE</th>
+              <th>EFFICIENCY</th>
+              <th>TIME</th>
+              <th>ACTION</th>
+            </tr>
+          </thead>
+          <tbody id="lb-tbody">
+            <tr><td colspan="7" class="empty-state">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Confirm reset modal -->
+<div class="confirm-modal" id="confirm-modal">
+  <div class="confirm-box">
+    <h3>⚠ CONFIRM RESET</h3>
+    <p>This will clear ALL number allocations and generate a new pool of <strong id="confirm-size">—</strong> numbers.<br><br>All previous combinations are invalidated. Any player holding an old number will not be able to win.</p>
+    <div class="confirm-btns">
+      <button class="btn btn-danger" style="flex:1" onclick="doReset()">YES, RESET</button>
+      <button class="btn btn-secondary" style="flex:1" onclick="closeConfirm()">CANCEL</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ── Supabase ──────────────────────────────────────────────────────
+const SUPABASE_URL = 'https://YOUR_PROJECT.supabase.co';
+const SUPABASE_ANON_KEY = 'YOUR_ANON_KEY';
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ── Auth ──────────────────────────────────────────────────────────
+async function doLogin() {
+  const email = document.getElementById('email').value.trim();
+  const pwd   = document.getElementById('password').value;
+  const err   = document.getElementById('login-err');
+  err.textContent = '';
+
+  const { error } = await db.auth.signInWithPassword({ email, password: pwd });
+  if (error) { err.textContent = error.message; return; }
+  showAdmin(email);
+}
+
+async function doLogout() {
+  await db.auth.signOut();
+  document.getElementById('admin-screen').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+}
+
+function showAdmin(email) {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('admin-screen').style.display = 'block';
+  document.getElementById('user-email-display').textContent = email;
+  loadAll();
+}
+
+// Auto-restore session on reload
+db.auth.onAuthStateChange((event, session) => {
+  if (session) showAdmin(session.user.email);
+});
+
+// ── Load everything ──────────────────────────────────────────────
+async function loadAll() {
+  await Promise.all([loadPoolConfig(), loadLeaderboard()]);
+}
+
+// ── Pool config ──────────────────────────────────────────────────
+async function loadPoolConfig() {
+  const { data, error } = await db.from('pool_config').select('*').single();
+  if (error || !data) { showStatus('Failed to load pool config: ' + (error?.message || ''), true); return; }
+
+  document.getElementById('odds-live').textContent = data.pool_size;
+  document.getElementById('stat-total').textContent = data.pool_numbers?.length || 0;
+  document.getElementById('new-pool-size').placeholder = `current: ${data.pool_size}`;
+
+  // Load allocations count
+  const { count } = await db.from('allocations').select('*', { count: 'exact', head: true });
+  document.getElementById('stat-allocated').textContent = count || 0;
+
+  // Render pool grid
+  renderPoolGrid(data.pool_numbers || []);
+}
+
+async function renderPoolGrid(numbers) {
+  // Get all allocated combinations
+  const { data: allocs } = await db.from('allocations').select('combination');
+  const allocatedSet = new Set((allocs || []).map(a => a.combination));
+
+  const grid = document.getElementById('pool-grid');
+  if (!numbers.length) {
+    grid.innerHTML = '<div class="empty-state">No pool configured. Reset to generate one.</div>';
+    return;
+  }
+
+  grid.innerHTML = numbers
+    .sort((a, b) => a - b)
+    .map(n => {
+      const padded = String(n).padStart(3, '0');
+      const isAlloc = allocatedSet.has(padded);
+      return `<div class="pool-cell${isAlloc ? ' allocated' : ''}" title="${isAlloc ? 'Allocated to a player' : 'Available'}">${padded}</div>`;
+    }).join('');
+}
+
+// ── Reset pool ────────────────────────────────────────────────────
+let pendingResetSize = null;
+
+function confirmReset() {
+  const val = parseInt(document.getElementById('new-pool-size').value);
+  if (!val || val < 1 || val > 999) {
+    showStatus('Enter a valid pool size between 1 and 999.', true);
+    return;
+  }
+  pendingResetSize = val;
+  document.getElementById('confirm-size').textContent = val;
+  document.getElementById('confirm-modal').classList.add('show');
+}
+
+function closeConfirm() {
+  document.getElementById('confirm-modal').classList.remove('show');
+  pendingResetSize = null;
+}
+
+async function doReset() {
+  closeConfirm();
+  if (!pendingResetSize) return;
+  const size = pendingResetSize;
+
+  showStatus('Generating new pool...');
+
+  // Generate pool: pick `size` unique random numbers from 001-999
+  const all = Array.from({length: 999}, (_, i) => i + 1);
+  const shuffled = all.sort(() => Math.random() - 0.5);
+  const pool = shuffled.slice(0, size);
+
+  // Clear allocations
+  const { error: delErr } = await db.from('allocations').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+  if (delErr) { showStatus('Failed to clear allocations: ' + delErr.message, true); return; }
+
+  // Upsert pool config (assumes single row with id=1)
+  const { error: upsertErr } = await db.from('pool_config').upsert({
+    id: 1,
+    pool_size: size,
+    pool_numbers: pool,
+    updated_at: new Date().toISOString()
+  });
+  if (upsertErr) { showStatus('Failed to save pool: ' + upsertErr.message, true); return; }
+
+  showStatus(`Pool reset! New size: ${size}. ${size} numbers generated. Lock can now be set.`);
+  await loadPoolConfig();
+}
+
+// ── Leaderboard ──────────────────────────────────────────────────
+async function loadLeaderboard() {
+  const { data, error } = await db
+    .from('scores')
+    .select('id, nickname, score, phase_reached, efficiency, created_at, removed')
+    .eq('removed', false)
+    .order('score', { ascending: false })
+    .limit(50);
+
+  const tbody = document.getElementById('lb-tbody');
+  if (error || !data?.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No scores yet.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = data.map((row, i) => `
+    <tr>
+      <td><span class="rank-badge">${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '#' + (i+1)}</span></td>
+      <td style="font-weight:600">${escHtml(row.nickname)}</td>
+      <td><span class="score-val">${row.score.toLocaleString()}</span></td>
+      <td>${row.phase_reached || '—'}/3</td>
+      <td>${row.efficiency || '—'}%</td>
+      <td class="ts-val">${formatTime(row.created_at)}</td>
+      <td>
+        <button class="btn-remove" onclick="removeScore('${row.id}', '${escHtml(row.nickname)}')">
+          REMOVE
+        </button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function removeScore(id, nick) {
+  if (!confirm(`Remove "${nick}" from the leaderboard?`)) return;
+  const { error } = await db.from('scores').update({ removed: true }).eq('id', id);
+  if (error) { showStatus('Remove failed: ' + error.message, true); return; }
+  showStatus(`"${nick}" removed from leaderboard.`);
+  loadLeaderboard();
+}
+
+// ── Helpers ───────────────────────────────────────────────────────
+function showStatus(msg, isError = false) {
+  const el = document.getElementById('status-msg');
+  el.textContent = msg;
+  el.className = 'status-bar' + (isError ? ' error' : '');
+  el.style.display = 'block';
+  setTimeout(() => { el.style.display = 'none'; }, 5000);
+}
+
+function formatTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+}
+
+function escHtml(str) {
+  return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// Enter key on login
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && document.getElementById('login-screen').style.display !== 'none') {
+    doLogin();
+  }
+});
+</script>
+</body>
+</html>
