@@ -502,6 +502,7 @@
   </div>
 </div>
 
+<script src="config.js"></script>
 <script>
 'use strict';
 
@@ -1535,9 +1536,7 @@ function render() {
 
 // ── Overlays ──────────────────────────────────────────────────────
 // ── Supabase config ───────────────────────────────────────────────
-// Replace with your actual project URL and anon key
-const SUPABASE_URL = 'https://YOUR_PROJECT.supabase.co';
-const SUPABASE_ANON_KEY = 'YOUR_ANON_KEY';
+// SUPABASE_URL and SUPABASE_ANON_KEY loaded from config.js (gitignored)
 let db = null;
 try {
   db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);

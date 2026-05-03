@@ -539,12 +539,12 @@
   </div>
 </div>
 
+<script src="config.js"></script>
 <script>
 'use strict';
 
 // ── Supabase ──────────────────────────────────────────────────────
-const SUPABASE_URL = 'https://YOUR_PROJECT.supabase.co';
-const SUPABASE_ANON_KEY = 'YOUR_ANON_KEY';
+// SUPABASE_URL and SUPABASE_ANON_KEY loaded from config.js (gitignored)
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ── Auth ──────────────────────────────────────────────────────────
