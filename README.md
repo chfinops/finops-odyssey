@@ -13,8 +13,9 @@ An 8-bit space arcade game built for **CloudHealth's FinOpsX 2026 conference boo
 
 ```
 finops-odyssey/
-├── index.html              # The game (rename from finops_odyssey.html)
+├── index.html              # The game
 ├── admin.html              # Booth staff portal
+├── config.example.js       # Supabase credentials template (copy → config.js, gitignored)
 ├── supabase_setup.sql      # One-time database setup
 └── README.md               # This file
 ```
@@ -73,18 +74,20 @@ This creates 3 tables (`scores`, `pool_config`, `allocations`), seeds an initial
 
 ---
 
-### 2. Configure the HTML files
+### 2. Configure credentials
 
-Open both `index.html` and `admin.html` in a text editor.
+```bash
+cp config.example.js config.js
+```
 
-In each file, find these two lines near the top of the `<script>` block:
+Open `config.js` and fill in your values from step 1c:
 
 ```javascript
 const SUPABASE_URL = 'https://YOUR_PROJECT.supabase.co';
 const SUPABASE_ANON_KEY = 'YOUR_ANON_KEY';
 ```
 
-Replace with your actual values from step 1c.
+> ⚠️ `config.js` is gitignored — never commit it. Both `index.html` and `admin.html` load it automatically via `<script src="config.js">`.
 
 ---
 
@@ -116,9 +119,10 @@ git push -u origin main
 .env.local
 node_modules/
 *.log
+config.js
 ```
 
-> ⚠️ Don't commit a `.env` file with real credentials. The Supabase URL and anon key go directly in the HTML files (they're public-safe with RLS).
+> ⚠️ Never commit `config.js` — it contains your real Supabase credentials. Only `config.example.js` (with placeholder values) belongs in git.
 
 ---
 
@@ -206,7 +210,7 @@ Every `git push` to `main` auto-deploys. You'll have:
 ### "Score won't save" / "Leaderboard empty"
 - Open browser dev console (F12)
 - Look for Supabase errors
-- Most common: wrong `SUPABASE_URL` or `SUPABASE_ANON_KEY` in `index.html`
+- Most common: wrong `SUPABASE_URL` or `SUPABASE_ANON_KEY` in `config.js`, or `config.js` not present
 - Or: RLS policies didn't get created — re-run `supabase_setup.sql`
 
 ### "Admin login fails"
@@ -256,7 +260,7 @@ To add or modify questions, edit the `FINOPS_EVENT_POOL` array in `index.html`.
 - **Styling**: Hand-rolled CSS with pixel-art aesthetic, Press Start 2P + Orbitron fonts
 - **Database**: Supabase (Postgres + Auth + RLS)
 - **Hosting**: Vercel (static, auto-deploy on git push)
-- **Total moving parts**: 3 files, 1 database, 1 Vercel project
+- **Total moving parts**: 4 files, 1 database, 1 Vercel project
 
 ---
 
