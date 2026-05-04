@@ -432,9 +432,48 @@
     color: var(--gold);
   }
 
+  /* How-to-play panel on start screen */
+  .how-to {
+    width: 100%;
+    max-width: 340px;
+    border: 2px solid var(--cyan);
+    background: rgba(11,61,145,0.25);
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .how-to-title {
+    font-size: 7px;
+    text-align: center;
+    color: var(--gold);
+    letter-spacing: 2px;
+    margin-bottom: 2px;
+  }
+  .how-to-row {
+    display: grid;
+    grid-template-columns: 16px 60px 1fr;
+    gap: 4px;
+    align-items: center;
+    font-size: 6px;
+    line-height: 1.6;
+  }
+  .how-to-row .ico { font-size: 10px; text-align: center; }
+  .how-to-row .lbl { letter-spacing: 1px; }
+  .how-to-row .txt { color: rgba(240,244,255,0.85); }
+  .how-to-row.mission .lbl { color: var(--cyan); }
+  .how-to-row.budget  .lbl { color: var(--gold); }
+  .how-to-row.shoot   .lbl { color: var(--ch-orange); }
+  .how-to-row.avoid   .lbl { color: var(--nasa-red); }
+  .how-to-row.collect .lbl { color: var(--green); }
+  .how-to-row.answer  .lbl { color: var(--cyan); }
+  .how-to-row.win     .lbl { color: var(--gold); }
+
   @media (max-height: 700px) {
     #overlay h1 { font-size: 18px; }
     .ctrl-btn { padding: 10px 4px; font-size: 7px; }
+    .how-to { padding: 6px 8px; gap: 3px; }
+    .how-to-row { font-size: 5px; }
   }
 </style>
 </head>
@@ -501,6 +540,16 @@
       <span class="coin-badge">$ VISIBILITY</span>
       <span class="coin-badge">$ GOVERNANCE</span>
       <span class="coin-badge">$ SAVINGS</span>
+    </div>
+    <div class="how-to">
+      <div class="how-to-title">★ HOW TO PLAY ★</div>
+      <div class="how-to-row mission"><span class="ico">🎯</span><span class="lbl">MISSION</span><span class="txt">Land before $1000K runs out</span></div>
+      <div class="how-to-row budget"><span class="ico">💰</span><span class="lbl">BUDGET</span><span class="txt">Always draining. Every action spends</span></div>
+      <div class="how-to-row shoot"><span class="ico">🚀</span><span class="lbl">SHOOT</span><span class="txt">Asteroids = waste. Each shot -$2</span></div>
+      <div class="how-to-row avoid"><span class="ico">⚠️</span><span class="lbl">AVOID</span><span class="txt">Asteroid hit -$75 · Wrong call -$300</span></div>
+      <div class="how-to-row collect"><span class="ico">💎</span><span class="lbl">COLLECT</span><span class="txt">Coins refund: V/G +$30 · Savings +$60</span></div>
+      <div class="how-to-row answer"><span class="ico">🧠</span><span class="lbl">ANSWER</span><span class="txt">FinOps Q correct +$150 · wrong -$300</span></div>
+      <div class="how-to-row win"><span class="ico">🏆</span><span class="lbl">WIN</span><span class="txt">Land with budget left = bonus + prize</span></div>
     </div>
     <button class="pixel-btn" id="start-btn">LAUNCH MISSION</button>
     <div class="controls-hint">
