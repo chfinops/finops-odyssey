@@ -9,6 +9,7 @@ An 8-bit space arcade game for **CloudHealth's FinOpsX 2026 conference booth**. 
 | | URL |
 |---|---|
 | **Game** | `https://finops-odyssey.vercel.app/` |
+| **Booth display (TV)** | `https://finops-odyssey.vercel.app/ch-booth-display.html` |
 | **Staff portal** | `https://finops-odyssey.vercel.app/ch-booth-staff.html` |
 
 > Every `git push` to `main` auto-deploys to Vercel.
@@ -17,7 +18,7 @@ An 8-bit space arcade game for **CloudHealth's FinOpsX 2026 conference booth**. 
 
 ## 🎮 How the game works
 
-Players open the game URL on phone or laptop — no login, no install.
+Players open the game URL on phone or laptop — no login, no install. **Each round lasts ~2 minutes.**
 
 1. **Pilot the rocket** through 3 mission phases: Week 1-2 → Week 3 → Week 4 · Landing
 2. **Manage a $1000K monthly cloud budget** — every action spends it, every smart decision refunds it
