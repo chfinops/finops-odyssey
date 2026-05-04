@@ -143,6 +143,13 @@
     border: 1px solid var(--cyan);
   }
   .bar-fill { height: 100%; transition: width 0.2s, background 0.2s; }
+  .bar-fill.crit {
+    animation: pulse-crit 0.5s infinite;
+  }
+  @keyframes pulse-crit {
+    0%, 100% { background: var(--nasa-red); box-shadow: 0 0 4px var(--nasa-red); }
+    50% { background: #FF8888; box-shadow: 0 0 12px var(--nasa-red); }
+  }
 
   /* Controls panel */
   #controls {
@@ -425,9 +432,48 @@
     color: var(--gold);
   }
 
+  /* How-to-play panel on start screen */
+  .how-to {
+    width: 100%;
+    max-width: 340px;
+    border: 2px solid var(--cyan);
+    background: rgba(11,61,145,0.25);
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .how-to-title {
+    font-size: 7px;
+    text-align: center;
+    color: var(--gold);
+    letter-spacing: 2px;
+    margin-bottom: 2px;
+  }
+  .how-to-row {
+    display: grid;
+    grid-template-columns: 16px 60px 1fr;
+    gap: 4px;
+    align-items: center;
+    font-size: 6px;
+    line-height: 1.6;
+  }
+  .how-to-row .ico { font-size: 10px; text-align: center; }
+  .how-to-row .lbl { letter-spacing: 1px; }
+  .how-to-row .txt { color: rgba(240,244,255,0.85); }
+  .how-to-row.mission .lbl { color: var(--cyan); }
+  .how-to-row.budget  .lbl { color: var(--gold); }
+  .how-to-row.shoot   .lbl { color: var(--ch-orange); }
+  .how-to-row.avoid   .lbl { color: var(--nasa-red); }
+  .how-to-row.collect .lbl { color: var(--green); }
+  .how-to-row.answer  .lbl { color: var(--cyan); }
+  .how-to-row.win     .lbl { color: var(--gold); }
+
   @media (max-height: 700px) {
     #overlay h1 { font-size: 18px; }
     .ctrl-btn { padding: 10px 4px; font-size: 7px; }
+    .how-to { padding: 6px 8px; gap: 3px; }
+    .how-to-row { font-size: 5px; }
   }
 </style>
 </head>
@@ -485,14 +531,25 @@
     <h1>FINOPS<br>ODYSSEY</h1>
     <div class="subtitle">QUEST FOR LUNAR SAVINGS</div>
     <div class="brief">
-      PILOT THE CLOUDHEALTH ROCKET TO THE MOON.<br>
-      OPTIMIZE SPEND. DEFEAT WASTE.<br>
-      LAND ZERO-WASTE. WIN THE PRIZE.
+      THIS MONTH'S CLOUD BUDGET: $1000K<br>
+      EVERY SHOT, HIT &amp; BAD CALL SPENDS.<br>
+      COLLECT SAVINGS. ANSWER FINOPS WISELY.<br>
+      REACH THE MOON BEFORE THE MONTH BURNS OUT.
     </div>
     <div class="coin-badges">
       <span class="coin-badge">$ VISIBILITY</span>
       <span class="coin-badge">$ GOVERNANCE</span>
       <span class="coin-badge">$ SAVINGS</span>
+    </div>
+    <div class="how-to">
+      <div class="how-to-title">★ HOW TO PLAY ★</div>
+      <div class="how-to-row mission"><span class="ico">🎯</span><span class="lbl">MISSION</span><span class="txt">Land before $1000K runs out</span></div>
+      <div class="how-to-row budget"><span class="ico">💰</span><span class="lbl">BUDGET</span><span class="txt">Always draining. Every action spends</span></div>
+      <div class="how-to-row shoot"><span class="ico">🚀</span><span class="lbl">SHOOT</span><span class="txt">Asteroids = waste. Each shot -$2</span></div>
+      <div class="how-to-row avoid"><span class="ico">⚠️</span><span class="lbl">AVOID</span><span class="txt">Asteroid hit -$75 · Wrong call -$300</span></div>
+      <div class="how-to-row collect"><span class="ico">💎</span><span class="lbl">COLLECT</span><span class="txt">Coins refund: V/G +$30 · Savings +$60</span></div>
+      <div class="how-to-row answer"><span class="ico">🧠</span><span class="lbl">ANSWER</span><span class="txt">FinOps Q correct +$150 · wrong -$300</span></div>
+      <div class="how-to-row win"><span class="ico">🏆</span><span class="lbl">WIN</span><span class="txt">Land with budget left = bonus + prize</span></div>
     </div>
     <button class="pixel-btn" id="start-btn">LAUNCH MISSION</button>
     <div class="controls-hint">
@@ -530,7 +587,20 @@ let state = 'idle'; // idle | playing | event | dead | won
 let score = 0, budget = STARTING_BUDGET, efficiency = 80, phase = 1;
 let frame = 0;
 let phaseProgress = 0;
-const PHASE_GOAL = 1500; // frames per phase before lunar approach
+const PHASE_GOAL = 2700; // frames per phase before lunar approach (~2:00 total round)
+
+// ── Budget-as-fuel tunables ──
+const BULLET_COST = 2;             // each shot = compute call
+const PHASE_TRANSITION_COST = 50;  // commitment cost entering new phase
+const BURN_RATE_BASE = 2;          // baseline always-on drain (per ~60-frame tick)
+const COIN_REFUND = { visibility: 30, governance: 30, savings: 60 };
+const QUIZ_REFUND = 150;
+const QUIZ_PENALTY = 300;
+const ASTEROID_PENALTY = 75;
+const SAVINGS_BUFF_FRAMES = 300;   // governance coin: ~5s reduced burn
+let savingsBonus = 0;              // leftover-budget bonus on win (for HUD/win screen)
+let deathReason = 'BUDGET DEPLETED'; // shown on game-over
+let spendTags = [];                // floating "+$X" / "-$X" texts
 const keys = {};
 const touch = { left: false, right: false, fire: false };
 
@@ -574,6 +644,7 @@ const ship = {
   shootCooldown: 0,
   thrustAnim: 0,
   invincible: 0,
+  savingsBuff: 0,
 };
 
 function initShip() {
@@ -1254,8 +1325,8 @@ function spawnAsteroid() {
   asteroids.push({
     x: 20 + Math.random() * (W - 40),
     y: -20,
-    vx: (Math.random() - 0.5) * (1.2 + phase * 0.4),
-    vy: 1 + Math.random() * (0.8 + phase * 0.3),
+    vx: (Math.random() - 0.5) * (0.8 + phase * 0.25),
+    vy: 0.6 + Math.random() * (0.5 + phase * 0.2),
     rot: 0,
     rotSpeed: (Math.random() - 0.5) * 0.06,
     size: 14 + Math.random() * 10,
@@ -1268,10 +1339,37 @@ function spawnCoin() {
   coins.push({
     x: 20 + Math.random() * (W - 40),
     y: -10,
-    vy: 1.2 + Math.random() * 0.6,
+    vy: 0.7 + Math.random() * 0.4,
     type,
     anim: Math.random() * Math.PI,
   });
+}
+
+function spawnSpendTag(text, x, y, color) {
+  spendTags.push({
+    text, x, y, color,
+    vy: -0.8,
+    life: 50,
+    maxLife: 50,
+  });
+}
+
+function drawSpendTags() {
+  if (!spendTags.length) return;
+  ctx.save();
+  ctx.font = 'bold 9px "Press Start 2P", monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  spendTags.forEach(t => {
+    t.y += t.vy;
+    t.life--;
+    const a = Math.max(0, t.life / t.maxLife);
+    ctx.globalAlpha = a;
+    ctx.fillStyle = t.color;
+    ctx.fillText(t.text, t.x, t.y);
+  });
+  ctx.restore();
+  spendTags = spendTags.filter(t => t.life > 0);
 }
 
 function spawnExplosion(x, y, big = false) {
@@ -1339,12 +1437,14 @@ function handleEventChoice(option, optsDiv) {
 
   if (option.correct) {
     score += 500 * phase;
-    budget = Math.min(STARTING_BUDGET, budget + 100);
+    budget = Math.min(STARTING_BUDGET, budget + QUIZ_REFUND);
     efficiency = Math.min(100, efficiency + 10);
     eventsAnswered++;
+    spawnSpendTag('+$' + QUIZ_REFUND + ' SAVED!', W / 2, H / 2, '#39FF14');
   } else {
-    budget = Math.max(0, budget - 200);
+    budget = Math.max(0, budget - QUIZ_PENALTY);
     efficiency = Math.max(0, efficiency - 15);
+    spawnSpendTag('-$' + QUIZ_PENALTY + ' WASTE!', W / 2, H / 2, '#FC3D21');
   }
 
   const cont = document.createElement('button');
@@ -1356,6 +1456,7 @@ function handleEventChoice(option, optsDiv) {
     eventTriggered = false;
     // Check if budget killed by wrong answer
     if (budget <= 0) {
+      deathReason = 'BUDGET DEPLETED';
       state = 'dead';
       showOverlay('dead');
     } else {
@@ -1369,9 +1470,9 @@ function handleEventChoice(option, optsDiv) {
 function updatePhase() {
   document.getElementById('phase-num').textContent = phase;
   const labels = [
-    'PHASE 1 · PRE-LAUNCH',
-    'PHASE 2 · TRANSLUNAR INJECTION',
-    'PHASE 3 · LUNAR LANDING',
+    'WK 1-2 · PRE-LAUNCH',
+    'WK 3 · TRANSLUNAR',
+    'WK 4 · LUNAR LANDING',
   ];
   document.getElementById('phase-label').textContent = labels[phase - 1];
 }
@@ -1387,28 +1488,32 @@ function updateGame() {
   if (keys['ArrowLeft'] || touch.left) ship.x = Math.max(15, ship.x - ship.speed);
   if (keys['ArrowRight'] || touch.right) ship.x = Math.min(W - 15, ship.x + ship.speed);
 
-  // Shoot
-  if ((keys[' '] || keys['Space'] || touch.fire) && ship.shootCooldown <= 0) {
+  // Shoot — each bullet is a compute call, debited from budget
+  if ((keys[' '] || keys['Space'] || touch.fire) && ship.shootCooldown <= 0 && budget > BULLET_COST) {
     bullets.push({ x: ship.x, y: ship.y - 18, vy: -8 });
+    let shotCost = BULLET_COST;
     if (eventsAnswered >= 2) {
       bullets.push({ x: ship.x - 7, y: ship.y - 8, vy: -8 });
       bullets.push({ x: ship.x + 7, y: ship.y - 8, vy: -8 });
+      shotCost = BULLET_COST * 3;
     }
+    budget = Math.max(0, budget - shotCost);
     ship.shootCooldown = 14;
   }
   if (ship.shootCooldown > 0) ship.shootCooldown--;
+  if (ship.savingsBuff > 0) ship.savingsBuff--;
 
   // Bullets
   bullets.forEach(b => b.y += b.vy);
   bullets = bullets.filter(b => b.y > -10);
 
   // Spawn
-  const spawnRate = Math.max(35, 75 - phase * 12);
+  const spawnRate = Math.max(55, 110 - phase * 15);
   if (frame % spawnRate === 0) spawnAsteroid();
-  if (frame % 140 === 0) spawnCoin();
+  if (frame % 200 === 0) spawnCoin();
 
-  // FinOps event trigger every ~360 frames, only if questions remain
-  if (frame % 360 === 100 && !eventTriggered && state === 'playing' && questionIndex < FINOPS_EVENTS.length) {
+  // FinOps event trigger every ~1200 frames (~20s play time), only if questions remain
+  if (frame % 1200 === 100 && !eventTriggered && state === 'playing' && questionIndex < FINOPS_EVENTS.length) {
     eventTriggered = true;
     triggerFinOpsEvent();
     return;
@@ -1449,12 +1554,14 @@ function updateGame() {
     asteroids.forEach((a, ai) => {
       const d = Math.hypot(ship.x - a.x, ship.y - a.y);
       if (d < a.size / 1.5 + 12) {
-        budget = Math.max(0, budget - 50);
+        budget = Math.max(0, budget - ASTEROID_PENALTY);
         efficiency = Math.max(0, efficiency - 8);
         spawnExplosion(a.x, a.y, true);
+        spawnSpendTag('-$' + ASTEROID_PENALTY + ' WASTE!', a.x, a.y - 10, '#FC3D21');
         asteroids.splice(ai, 1);
         ship.invincible = 90;
         if (budget <= 0) {
+          deathReason = 'BUDGET DEPLETED';
           state = 'dead';
           showOverlay('dead');
         }
@@ -1467,18 +1574,24 @@ function updateGame() {
     const d = Math.hypot(ship.x - c.x, ship.y - c.y);
     if (d < 18) {
       coinsCollected[c.type]++;
+      const refund = COIN_REFUND[c.type] || 30;
+      budget = Math.min(STARTING_BUDGET, budget + refund);
       score += 75;
       efficiency = Math.min(100, efficiency + 2);
+      if (c.type === 'governance') ship.savingsBuff = SAVINGS_BUFF_FRAMES;
       spawnExplosion(c.x, c.y);
+      spawnSpendTag('+$' + refund + ' SAVED', c.x, c.y - 10, '#FFB300');
       coins.splice(ci, 1);
     }
   });
 
-  // Slow budget burn (cloud spend)
+  // Always-on cloud spend (depleting monthly budget)
   if (frame % 60 === 0) {
-    const burnRate = 1 + (100 - efficiency) / 20;
-    budget = Math.max(0, budget - burnRate);
+    const burnRate = BURN_RATE_BASE + (100 - efficiency) / 15;
+    const buff = ship.savingsBuff > 0 ? 0.5 : 1;
+    budget = Math.max(0, budget - burnRate * buff);
     if (budget <= 0) {
+      deathReason = 'BUDGET DEPLETED';
       state = 'dead';
       showOverlay('dead');
     }
@@ -1488,9 +1601,18 @@ function updateGame() {
   if (phaseProgress > PHASE_GOAL && phase < 3) {
     phase++;
     phaseProgress = 0;
+    budget = Math.max(0, budget - PHASE_TRANSITION_COST);
+    spawnSpendTag('-$' + PHASE_TRANSITION_COST + ' (NEW PHASE)', W / 2, 80, '#FF6B1A');
     updatePhase();
     announceWave();
-  } else if (phase === 3 && phaseProgress > 800) {
+    if (budget <= 0) {
+      deathReason = 'BUDGET DEPLETED';
+      state = 'dead';
+      showOverlay('dead');
+    }
+  } else if (phase === 3 && phaseProgress > 1800) {
+    savingsBonus = Math.floor(budget * 5);
+    score += savingsBonus;
     state = 'won';
     showOverlay('won');
   }
@@ -1498,8 +1620,14 @@ function updateGame() {
   // HUD
   document.getElementById('score-display').textContent = String(score).padStart(6, '0');
   document.getElementById('budget-display').textContent = '$' + (budget | 0) + 'K';
-  document.getElementById('budget-bar').style.width = (budget / STARTING_BUDGET * 100) + '%';
-  document.getElementById('budget-bar').style.background = budget > 300 ? 'var(--gold)' : 'var(--nasa-red)';
+  const budgetBar = document.getElementById('budget-bar');
+  budgetBar.style.width = (budget / STARTING_BUDGET * 100) + '%';
+  if (budget < 200) {
+    budgetBar.classList.add('crit');
+  } else {
+    budgetBar.classList.remove('crit');
+    budgetBar.style.background = budget > 300 ? 'var(--gold)' : 'var(--nasa-red)';
+  }
   document.getElementById('eff-display').textContent = (efficiency | 0) + '%';
   document.getElementById('eff-bar').style.width = efficiency + '%';
   document.getElementById('eff-bar').style.background = efficiency > 50 ? 'var(--cyan)' : 'var(--nasa-red)';
@@ -1527,6 +1655,7 @@ function render() {
     drawShip();
     drawExplosions();
     drawParticles();
+    drawSpendTags();
 
     if (state === 'playing') updateGame();
   }
@@ -1640,8 +1769,8 @@ function showOverlay(type) {
 
   if (type === 'dead') {
     o.innerHTML = `
-      <h1 style="background:linear-gradient(180deg,#FC3D21,#A0220F);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">MISSION<br>FAILED</h1>
-      <h2 style="color:var(--nasa-red)">BUDGET DEPLETED</h2>
+      <h1 style="background:linear-gradient(180deg,#FC3D21,#A0220F);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">END OF<br>MONTH</h1>
+      <h2 style="color:var(--nasa-red)">${deathReason}</h2>
       <div class="brief">
         FINAL ROI: ${score}<br>
         EFFICIENCY: ${efficiency | 0}%<br>
@@ -1657,11 +1786,12 @@ function showOverlay(type) {
     promptNicknameAndNumber(score, false);
   } else if (type === 'won') {
     o.innerHTML = `
-      <h1 style="background:linear-gradient(180deg,#39FF14,#0B7C0F);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">ZERO-WASTE<br>LANDING!</h1>
+      <h1 style="background:linear-gradient(180deg,#39FF14,#0B7C0F);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">UNDER<br>BUDGET!</h1>
       <h2 style="color:var(--green)">★ ARTEMIS LANDED ★</h2>
       <div class="brief">
+        SAVINGS BANK: $${budget | 0}K<br>
+        EFFICIENCY BONUS: +${savingsBonus} score<br>
         FINAL ROI: ${score}<br>
-        EFFICIENCY: ${efficiency | 0}%<br>
         FINOPS DECISIONS: ${eventsAnswered}/5 CORRECT
       </div>
       <div id="nick-section"></div>
@@ -1734,14 +1864,18 @@ function restartGame() {
   score = 0; budget = STARTING_BUDGET; efficiency = 80; phase = 1;
   frame = 0; phaseProgress = 0;
   asteroids = []; coins = []; bullets = []; particles = []; explosions = [];
+  spendTags = [];
+  savingsBonus = 0;
+  deathReason = 'BUDGET DEPLETED';
   coinsCollected = { visibility: 0, governance: 0, savings: 0 };
   eventTriggered = false; eventsAnswered = 0; questionIndex = 0;
   overlayShown = false;
   pickGameQuestions(); // fresh 5 from pool of 30
   initShip();
-  ship.bullets = []; ship.shootCooldown = 0; ship.invincible = 0;
+  ship.bullets = []; ship.shootCooldown = 0; ship.invincible = 0; ship.savingsBuff = 0;
   state = 'playing';
   updatePhase();
+  document.getElementById('budget-bar').classList.remove('crit');
   document.getElementById('overlay').style.display = 'none';
   document.getElementById('event-modal').classList.remove('show');
 }

@@ -9,6 +9,7 @@ An 8-bit space arcade game for **CloudHealth's FinOpsX 2026 conference booth**. 
 | | URL |
 |---|---|
 | **Game** | `https://finops-odyssey.vercel.app/` |
+| **Booth display (TV)** | `https://finops-odyssey.vercel.app/ch-booth-display.html` |
 | **Staff portal** | `https://finops-odyssey.vercel.app/ch-booth-staff.html` |
 
 > Every `git push` to `main` auto-deploys to Vercel.
@@ -17,13 +18,16 @@ An 8-bit space arcade game for **CloudHealth's FinOpsX 2026 conference booth**. 
 
 ## 🎮 How the game works
 
-Players open the game URL on phone or laptop — no login, no install.
+Players open the game URL on phone or laptop — no login, no install. **Each round lasts ~2 minutes.**
 
-1. **Pilot the rocket** through 3 mission phases: Pre-Launch → Translunar Injection → Lunar Landing
-2. **Dodge waste asteroids**, collect FinOps coins (Visibility / Governance / Savings)
-3. **Answer 5 FinOps quiz questions** drawn from a 30-question bank — always 2 INFORM + 2 OPTIMIZE + 1 OPERATE, always ≥1 AI question
-4. **On mission success** → get a 3-digit combination number
-5. **Screenshot it** → bring to the CloudHealth booth → try the lock → win
+1. **Pilot the rocket** through 3 mission phases: Week 1-2 → Week 3 → Week 4 · Landing
+2. **Manage a $1000K monthly cloud budget** — every action spends it, every smart decision refunds it
+3. **Dodge waste asteroids** (hit = -$75), collect FinOps coins (Visibility/Governance +$30, Savings +$60)
+4. **Answer 5 FinOps quiz questions** — right answer = +$150 refund, wrong = -$300 penalty
+5. **Each bullet costs $2** — aim for efficiency, not spray-and-pray
+6. **Land on the moon with budget remaining** → get a 3-digit combination number + score bonus for leftover budget
+7. **Budget hits $0 before landing** → "END OF MONTH — MISSION FAILED"
+8. **Screenshot your combo** → bring to the CloudHealth booth → try the lock → win
 
 ---
 
