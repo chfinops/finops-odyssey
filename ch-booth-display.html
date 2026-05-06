@@ -93,13 +93,24 @@
   .live-tag {
     font-family: 'Press Start 2P', monospace;
     font-size: 14px;
-    color: var(--green);
     padding: 12px 20px;
-    border: 2px solid var(--green);
+    border: 2px solid;
     border-radius: 4px;
+    animation: pulse 2s ease-in-out infinite;
+    transition: color 0.3s, border-color 0.3s, background 0.3s;
+  }
+  .live-tag.live {
+    color: var(--green);
+    border-color: var(--green);
     background: rgba(57,255,20,0.08);
     text-shadow: 0 0 8px rgba(57,255,20,0.6);
-    animation: pulse 2s ease-in-out infinite;
+  }
+  .live-tag.stale {
+    color: var(--nasa-red);
+    border-color: var(--nasa-red);
+    background: rgba(252,61,33,0.12);
+    text-shadow: 0 0 8px rgba(252,61,33,0.6);
+    animation: pulse 0.6s ease-in-out infinite;
   }
   @keyframes pulse {
     0%, 100% { opacity: 1; }
@@ -222,7 +233,7 @@
         🚀 FINOPS ODYSSEY
         <span class="sub">QUEST FOR LUNAR SAVINGS · LIVE LEADERBOARD</span>
       </div>
-      <div class="live-tag">● LIVE</div>
+      <div id="live-tag" class="live-tag live">● LIVE</div>
     </header>
 
     <div class="lb-header">
@@ -245,7 +256,15 @@
 
 const SUPABASE_URL = 'https://bruyhlosyllqciutlujx.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_9EWwL61RLG563gDGv49iNQ_9BFPSp3U';
-const db = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+// No login on this page — but disable persistSession so this tab can never
+// inadvertently inherit/clobber an admin session in another tab.
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+});
+
+let lastSuccess = null;
+const REFRESH_MS = 10000;
+const STALE_AFTER_MS = 30000; // mark badge red if no successful fetch in 30s
 
 function escHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, c =>
@@ -259,40 +278,78 @@ function rankBadge(i) {
   return '#' + (i + 1);
 }
 
-async function loadLeaderboard() {
-  const { data, error } = await db
-    .from('scores')
-    .select('nickname, score, phase_reached, efficiency')
-    .eq('removed', false)
-    .order('score', { ascending: false })
-    .limit(10);
+function setLiveBadge(state, msg) {
+  const tag = document.getElementById('live-tag');
+  if (!tag) return;
+  tag.className = 'live-tag ' + state;
+  tag.textContent = msg;
+}
 
+function checkStale() {
+  if (!lastSuccess) return;
+  const ageMs = Date.now() - lastSuccess;
+  if (ageMs > STALE_AFTER_MS) {
+    const mins = Math.floor(ageMs / 60000);
+    const secs = Math.floor((ageMs % 60000) / 1000);
+    const ago = mins > 0 ? `${mins}m${secs}s` : `${secs}s`;
+    setLiveBadge('stale', `● STALE · ${ago}`);
+  }
+}
+
+async function loadLeaderboard() {
   const container = document.getElementById('lb-rows');
 
-  if (error) {
-    container.innerHTML = `<div class="empty">Error loading scores: ${escHtml(error.message)}</div>`;
-    return;
+  let data, error;
+  try {
+    const res = await db
+      .from('scores')
+      .select('nickname, score, phase_reached, efficiency')
+      .eq('removed', false)
+      .order('score', { ascending: false })
+      .limit(10);
+    data = res.data; error = res.error;
+  } catch (e) {
+    error = e;
   }
-  if (!data?.length) {
-    container.innerHTML = '<div class="empty">No scores yet — be the first pilot to land on the moon.</div>';
+
+  if (error) {
+    // Don't wipe the existing rows — keep last good state visible, just mark stale
+    setLiveBadge('stale', '● CONNECTION ERROR');
+    console.error('[lb] fetch failed', error);
     return;
   }
 
-  container.innerHTML = data.map((row, i) => `
-    <div class="lb-row rank-${i + 1}">
-      <div class="rank">${rankBadge(i)}</div>
-      <div class="nick">${escHtml(row.nickname)}</div>
-      <div class="score">${row.score.toLocaleString()}</div>
-      <div class="meta col-phase">${row.phase_reached || '—'}/3</div>
-      <div class="meta col-eff">${row.efficiency ?? '—'}%</div>
-    </div>
-  `).join('');
+  lastSuccess = Date.now();
+  setLiveBadge('live', '● LIVE');
+
+  if (!data?.length) {
+    container.innerHTML = '<div class="empty">No scores yet — be the first pilot to land on the moon.</div>';
+  } else {
+    container.innerHTML = data.map((row, i) => `
+      <div class="lb-row rank-${i + 1}">
+        <div class="rank">${rankBadge(i)}</div>
+        <div class="nick">${escHtml(row.nickname)}</div>
+        <div class="score">${row.score.toLocaleString()}</div>
+        <div class="meta col-phase">${row.phase_reached || '—'}/3</div>
+        <div class="meta col-eff">${row.efficiency ?? '—'}%</div>
+      </div>
+    `).join('');
+  }
 
   document.getElementById('ts').textContent = new Date().toLocaleTimeString([], { hour12: false });
 }
 
 loadLeaderboard();
-setInterval(loadLeaderboard, 10000);
+setInterval(loadLeaderboard, REFRESH_MS);
+// Check staleness every 5s independently of fetch interval — so the badge
+// flips red even if the fetch promise hangs (network blip, browser sleep, etc.)
+setInterval(checkStale, 5000);
+
+// When tab becomes visible after backgrounding (browsers throttle setInterval
+// in hidden tabs), refresh immediately to catch up.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) loadLeaderboard();
+});
 </script>
 </body>
 </html>

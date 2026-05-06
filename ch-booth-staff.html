@@ -176,6 +176,22 @@
   }
   .logout-btn:hover { background: var(--nasa-red); color: var(--star); }
 
+  .auth-badge {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 9px;
+    padding: 6px 10px;
+    border-radius: 3px;
+    border: 1px solid;
+    letter-spacing: 1px;
+    white-space: nowrap;
+    max-width: 280px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .auth-badge.ok  { color: var(--green);    border-color: var(--green);    background: rgba(57,255,20,0.08); }
+  .auth-badge.err { color: var(--nasa-red); border-color: var(--nasa-red); background: rgba(252,61,33,0.12); animation: blink 1s ease-in-out infinite; }
+  @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+
   .admin-body {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -449,7 +465,7 @@
   <div class="top-bar">
     <div class="brand">FINOPS ODYSSEY</div>
     <div class="user-info">
-      <span id="user-email-display"></span>
+      <span id="auth-badge" class="auth-badge err">● CHECKING SESSION…</span>
       <button class="logout-btn" onclick="doLogout()">LOGOUT</button>
     </div>
   </div>
@@ -546,7 +562,13 @@
 // ── Supabase ──────────────────────────────────────────────────────
 const SUPABASE_URL = 'https://bruyhlosyllqciutlujx.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_9EWwL61RLG563gDGv49iNQ_9BFPSp3U';
-const db = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: false,
+  }
+});
 
 // ── Auth ──────────────────────────────────────────────────────────
 async function doLogin() {
@@ -557,26 +579,81 @@ async function doLogin() {
 
   const { error } = await db.auth.signInWithPassword({ email, password: pwd });
   if (error) { err.textContent = error.message; return; }
-  showAdmin(email);
+  // onAuthStateChange handles screen swap + badge
 }
 
 async function doLogout() {
+  if (!confirm('Log out? You will need to log in again to use staff controls.')) return;
   await db.auth.signOut();
+  // onAuthStateChange handles screen swap + badge
+}
+
+function showAdmin() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('admin-screen').style.display = 'block';
+  loadAll();
+}
+
+function showLogin() {
   document.getElementById('admin-screen').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
 }
 
-function showAdmin(email) {
-  document.getElementById('login-screen').style.display = 'none';
-  document.getElementById('admin-screen').style.display = 'block';
-  document.getElementById('user-email-display').textContent = email;
-  loadAll();
+// ── Session visibility & lifecycle ─────────────────────────────────
+function updateAuthBadge(session) {
+  const badge = document.getElementById('auth-badge');
+  if (!badge) return;
+  if (session?.user) {
+    badge.textContent = '● ' + session.user.email;
+    badge.className = 'auth-badge ok';
+  } else {
+    badge.textContent = '● LOGGED OUT — LOGIN AGAIN';
+    badge.className = 'auth-badge err';
+  }
 }
 
-// Auto-restore session on reload
 db.auth.onAuthStateChange((event, session) => {
-  if (session) showAdmin(session.user.email);
+  updateAuthBadge(session);
+  if (event === 'SIGNED_IN' || (event === 'INITIAL_SESSION' && session)) {
+    showAdmin();
+  } else if (event === 'SIGNED_OUT') {
+    showLogin();
+  }
+  // TOKEN_REFRESHED: badge already updated, no UI swap needed
 });
+
+// Heartbeat: every 60s call getSession() — also nudges autoRefreshToken
+// if the access token is near expiry. Keeps the session alive indefinitely
+// as long as the refresh token (default 1 week) is still valid.
+async function heartbeat() {
+  const { data: { session } } = await db.auth.getSession();
+  updateAuthBadge(session);
+  const adminVisible = document.getElementById('admin-screen').style.display !== 'none';
+  if (!session && adminVisible) {
+    showStatus('Your session expired. Please log in again.', true);
+    showLogin();
+  }
+}
+setInterval(heartbeat, 60000);
+
+// When tab becomes visible again after backgrounding, immediately re-check session.
+// Browsers throttle setInterval in hidden tabs; this catches up on return.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) heartbeat();
+});
+
+// Guard before destructive ops — surfaces stale sessions before the
+// silent-RLS-failure trap makes staff think a remove succeeded when it didn't.
+async function ensureSession() {
+  const { data: { session } } = await db.auth.getSession();
+  updateAuthBadge(session);
+  if (!session) {
+    showStatus('Session expired — please log in again.', true);
+    showLogin();
+    return false;
+  }
+  return true;
+}
 
 // ── Load everything ──────────────────────────────────────────────
 async function loadAll() {
@@ -642,6 +719,7 @@ function closeConfirm() {
 async function doReset() {
   closeConfirm();
   if (!pendingResetSize) return;
+  if (!await ensureSession()) return;
   const size = pendingResetSize;
 
   showStatus('Generating new pool...');
@@ -701,9 +779,11 @@ async function loadLeaderboard() {
 }
 
 async function removeScore(id, nick) {
+  if (!await ensureSession()) return;
   if (!confirm(`Remove "${nick}" from the leaderboard?`)) return;
-  const { error } = await db.from('scores').update({ removed: true }).eq('id', id);
+  const { data, error } = await db.from('scores').update({ removed: true }).eq('id', id).select();
   if (error) { showStatus('Remove failed: ' + error.message, true); return; }
+  if (!data?.length) { showStatus('Remove failed — 0 rows updated. Session may be invalid; try logging out and back in.', true); return; }
   showStatus(`"${nick}" removed from leaderboard.`);
   loadLeaderboard();
 }
