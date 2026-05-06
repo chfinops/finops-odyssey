@@ -75,10 +75,13 @@ CREATE POLICY "public score insert"
   WITH CHECK (true);
 
 -- scores: only authenticated staff can soft-delete (update removed=true)
+-- Uses TO authenticated role-grant pattern (works with publishable keys;
+-- the older auth.role() = 'authenticated' check fails under sb_publishable_*).
 CREATE POLICY "admin remove score"
   ON scores FOR UPDATE
-  USING (auth.role() = 'authenticated')
-  WITH CHECK (auth.role() = 'authenticated');
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
 
 -- pool_config: public read (game needs pool_size for odds display)
 CREATE POLICY "public pool read"
@@ -88,7 +91,9 @@ CREATE POLICY "public pool read"
 -- pool_config: only authenticated staff can update/reset
 CREATE POLICY "admin pool update"
   ON pool_config FOR UPDATE
-  USING (auth.role() = 'authenticated');
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
 
 -- allocations: public insert (game allocates on game end)
 CREATE POLICY "public allocation insert"
@@ -98,12 +103,14 @@ CREATE POLICY "public allocation insert"
 -- allocations: authenticated staff can read (admin portal pool view)
 CREATE POLICY "admin allocation read"
   ON allocations FOR SELECT
-  USING (auth.role() = 'authenticated');
+  TO authenticated
+  USING (true);
 
 -- allocations: authenticated staff can delete (during pool reset)
 CREATE POLICY "admin allocation delete"
   ON allocations FOR DELETE
-  USING (auth.role() = 'authenticated');
+  TO authenticated
+  USING (true);
 
 -- ── 5. Done ──────────────────────────────────────────────────────
 -- Next steps:

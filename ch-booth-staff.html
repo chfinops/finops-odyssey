@@ -782,7 +782,7 @@ async function removeScore(id, nick) {
   if (!await ensureSession()) return;
   if (!confirm(`Remove "${nick}" from the leaderboard?`)) return;
   const { data, error } = await db.from('scores').update({ removed: true }).eq('id', id).select();
-  if (error) { showStatus('Remove failed: ' + error.message, true); return; }
+  if (error) { console.error('[remove]', error); showStatus('Remove failed: ' + error.message, true); return; }
   if (!data?.length) { showStatus('Remove failed — 0 rows updated. Session may be invalid; try logging out and back in.', true); return; }
   showStatus(`"${nick}" removed from leaderboard.`);
   loadLeaderboard();
