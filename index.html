@@ -29,7 +29,7 @@
 
   html, body {
     width: 100%;
-    min-height: 100vh;
+    min-height: 100dvh;
     background: var(--bg);
     font-family: 'Press Start 2P', monospace;
     color: var(--star);
@@ -63,7 +63,7 @@
     width: 100%;
     max-width: 480px;
     aspect-ratio: 9 / 16;
-    max-height: 100vh;
+    max-height: 100dvh;
     display: flex;
     flex-direction: column;
     border: 2px solid var(--cyan);
@@ -156,7 +156,7 @@
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
     gap: 4px;
-    padding: 6px;
+    padding: 6px 6px calc(6px + env(safe-area-inset-bottom)) 6px;
     background: var(--bg2);
     border-top: 1px solid var(--cyan);
     flex-shrink: 0;
@@ -460,6 +460,30 @@
     text-transform: uppercase;
   }
   .nick-input:focus { outline: none; border-color: var(--gold); }
+  
+.nick-input, #submit-nick {
+    box-sizing: border-box !important; /* Prevents padding from breaking width */
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+    text-align: center;
+}
+
+.nick-input {
+    width: 100%;
+    max-width: 200px;
+    height: 40px;
+    background: rgba(0,0,0,0.5);
+    border: 2px solid var(--cyan);
+    color: white;
+    font-family: inherit;
+}
+
+#submit-nick.pixel-btn {
+    min-height: 44px; /* Proper touch target height for mobile */
+    cursor: pointer;
+    touch-action: manipulation;
+}
 
   /* Coin badge */
   .coin-badges {
@@ -2550,13 +2574,16 @@ async function promptNicknameAndNumber(sc, showCombo) {
   const finalOdds = currentOdds;
 
   sect.innerHTML = `
-    <div style="font-size:7px;color:var(--cyan);text-align:center;margin-bottom:6px">
+  <div style="display:flex; flex-direction:column; align-items:center; width:100%; box-sizing:border-box;">
+    <div style="font-size:7px; color:var(--cyan); text-align:center; margin-bottom:6px">
       ENTER CALLSIGN FOR LEADERBOARD
     </div>
     <input class="nick-input" id="nick-input" maxlength="8" placeholder="CALLSIGN" />
-    <button class="pixel-btn" id="submit-nick" style="margin-top:8px">SUBMIT SCORE</button>
-  `;
-
+    <button class="pixel-btn" id="submit-nick" style="margin-top:12px; width:100%; max-width:200px;">
+      SUBMIT SCORE
+    </button>
+  </div>
+`;
   setTimeout(() => {
     const input = document.getElementById('nick-input');
     const btn = document.getElementById('submit-nick');
