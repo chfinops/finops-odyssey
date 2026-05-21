@@ -295,6 +295,50 @@
 
   #event-modal.show { display: flex; }
 
+  /* Question display at top of screen */
+  #question-display {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(2,4,9,0.9);
+    border: 2px solid var(--cyan);
+    padding: 8px 12px;
+    max-width: 90%;
+    z-index: 30;
+    display: none;
+    text-align: center;
+  }
+
+  #question-display.show { display: block; }
+
+  .question-icon {
+    font-size: 16px;
+    margin-bottom: 4px;
+  }
+
+  .question-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 8px;
+    font-weight: 900;
+    color: var(--nasa-red);
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+  }
+
+  .question-desc {
+    font-size: 6px;
+    color: var(--star);
+    line-height: 1.4;
+    margin-bottom: 6px;
+  }
+
+  .question-instruction {
+    font-size: 5px;
+    color: var(--cyan);
+    letter-spacing: 1px;
+  }
+
   .event-icon {
     font-size: 32px;
     margin-bottom: 4px;
@@ -520,6 +564,13 @@
       <div class="event-desc" id="event-desc">Description</div>
       <div class="event-options" id="event-options"></div>
     </div>
+
+    <div id="question-display">
+      <div class="question-icon" id="question-icon">⚠</div>
+      <div class="question-title" id="question-title">FinOps Challenge</div>
+      <div class="question-desc" id="question-desc">Question description</div>
+      <div class="question-instruction">SHOOT THE CORRECT ASTEROID! EACH TAKES 20 HITS!</div>
+    </div>
   </div>
 
   <div id="hud">
@@ -534,9 +585,9 @@
       <span class="hud-label" style="color:var(--ch-orange)">PHASE <span id="phase-num">1</span>/3</span>
     </div>
     <div class="hud-block">
-      <span class="hud-label">EFFICIENCY</span>
-      <div class="bar-wrap"><div class="bar-fill" id="eff-bar" style="width:80%;background:var(--cyan)"></div></div>
-      <span class="hud-value" id="eff-display">80%</span>
+      <span class="hud-label">ACCURACY</span>
+      <div class="bar-wrap"><div class="bar-fill" id="eff-bar" style="width:0%;background:var(--cyan)"></div></div>
+      <span class="hud-value" id="eff-display">0%</span>
     </div>
     <div class="hud-block" style="grid-column:1/-1;border-top:1px solid rgba(0,229,255,0.2);padding-top:4px;flex-direction:row;justify-content:center;gap:8px;align-items:center">
       <span class="hud-label">CHANCE OF WINNING:</span>
@@ -572,7 +623,7 @@
       <div class="how-to-row shoot"><span class="ico">🚀</span><span class="lbl">SHOOT</span><span class="txt">Asteroids = waste. Each shot -$2</span></div>
       <div class="how-to-row avoid"><span class="ico">⚠️</span><span class="lbl">AVOID</span><span class="txt">Asteroid hit -$75 · Wrong call -$300</span></div>
       <div class="how-to-row collect"><span class="ico">💎</span><span class="lbl">COLLECT</span><span class="txt">Coins refund: V/G +$30 · Savings +$60</span></div>
-      <div class="how-to-row answer"><span class="ico">🧠</span><span class="lbl">ANSWER</span><span class="txt">FinOps Q correct +$150 · wrong -$300</span></div>
+      <div class="how-to-row answer"><span class="ico">🧠</span><span class="lbl">ANSWER</span><span class="txt">Shoot correct asteroid (20 hits) +$150 · wrong -$340</span></div>
       <div class="how-to-row win"><span class="ico">🏆</span><span class="lbl">WIN</span><span class="txt">Land with budget left = bonus + prize</span></div>
     </div>
     <button class="pixel-btn" id="start-btn">LAUNCH MISSION</button>
@@ -607,7 +658,7 @@ window.addEventListener('orientationchange', resizeCanvas);
 
 // ── State ──────────────────────────────────────────────────────────
 const STARTING_BUDGET = 1000;
-let state = 'idle'; // idle | playing | event | dead | won
+let state = 'idle'; // idle | playing | dead | won
 let score = 0, budget = STARTING_BUDGET, efficiency = 80, phase = 1;
 let frame = 0;
 let phaseProgress = 0;
@@ -630,10 +681,39 @@ const touch = { left: false, right: false, fire: false };
 
 // Game objects
 let asteroids = [];
+let answerAsteroids = [];
 let coins = [];
 let bullets = [];
 let particles = [];
 let explosions = [];
+
+// Question state
+let currentQuestion = null;
+let questionActive = false;
+let questionHitsRequired = 20;
+let questionWarning = false;
+let questionWarningTimer = 0;
+let rocketMoving = false;
+let rocketMoveTimer = 0;
+let rocketCrashed = false;
+let rocketCrashTimer = 0;
+let gameEndAnimation = false;
+let gameEndTimer = 0;
+let gameEndType = ''; // 'victory' or 'death'
+
+// Wave management
+let waveActive = false;
+let waveClearTimer = 0;
+let questionsAnsweredThisGame = 0;
+let waveTimer = 0;
+let waveAsteroidsSpawned = 0;
+let waveCompleted = false;
+const WAVE_DURATION = 1440; // 24 seconds at 60fps
+const MAX_ASTEROIDS_PER_WAVE = 12;
+
+// Accuracy tracking
+let bulletsShot = 0;
+let bulletsHit = 0;
 
 // FinOps coin types
 const COIN_TYPES = ['visibility', 'governance', 'savings'];
@@ -1094,6 +1174,181 @@ function drawBackground() {
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, W, H);
 
+  // Warning border during question warning
+  if (questionWarning) {
+    const intensity = Math.sin(frame * 0.2) * 0.5 + 0.5;
+    ctx.strokeStyle = `rgba(252,61,33,${0.3 + intensity * 0.4})`;
+    ctx.lineWidth = 6;
+    ctx.strokeRect(3, 3, W - 6, H - 6);
+  }
+
+  // Movement effect during rocket advancement
+  if (rocketMoving) {
+    // Clear path indicator (green corridor in middle)
+    const pathWidth = 80;
+    const pathAlpha = 0.1 + Math.sin(frame * 0.15) * 0.05;
+    ctx.fillStyle = `rgba(57,255,20,${pathAlpha})`;
+    ctx.fillRect(W/2 - pathWidth/2, 0, pathWidth, H);
+    
+    // Speed lines showing movement
+    for (let i = 0; i < 5; i++) {
+      const x = W/2 + (Math.random() - 0.5) * pathWidth;
+      const y = (frame * 3 + i * 120) % (H + 60) - 30;
+      ctx.strokeStyle = `rgba(57,255,20,${0.4 + Math.random() * 0.3})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x, y + 20);
+      ctx.stroke();
+    }
+  }
+
+  // Game end animations
+  if (gameEndAnimation) {
+    const progress = 1 - (gameEndTimer / 300);
+    
+    if (gameEndType === 'death') {
+      // Rocket explosion animation
+      const intensity = Math.sin(frame * 0.6) * 0.5 + 0.5;
+      
+      // Red explosion effects
+      ctx.strokeStyle = `rgba(252,61,33,${0.5 + intensity * 0.5})`;
+      ctx.lineWidth = 12;
+      ctx.strokeRect(2, 2, W - 4, H - 4);
+      
+      // Multiple explosion circles around ship
+      for (let i = 0; i < 8; i++) {
+        const angle = (i / 8) * Math.PI * 2 + frame * 0.1;
+        const radius = 40 + progress * 60;
+        const x = ship.x + Math.cos(angle) * radius;
+        const y = ship.y + Math.sin(angle) * radius;
+        
+        ctx.strokeStyle = `rgba(255,${100 + Math.random() * 100},0,${0.8 - progress * 0.5})`;
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.arc(x, y, 15 + Math.random() * 10, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      
+      // Debris particles
+      for (let i = 0; i < 25; i++) {
+        const x = ship.x + (Math.random() - 0.5) * 120;
+        const y = ship.y + (Math.random() - 0.5) * 120;
+        const sparkSize = 3 + Math.random() * 4;
+        ctx.fillStyle = `rgba(255,${Math.random() * 255},0,${0.8 - progress * 0.6})`;
+        ctx.fillRect(x, y, sparkSize, sparkSize);
+      }
+      
+    } else if (gameEndType === 'victory') {
+      // Moon landing animation
+      const landingProgress = Math.min(1, progress * 1.5);
+      
+      // Green success glow
+      const glow = Math.sin(frame * 0.2) * 0.3 + 0.7;
+      ctx.strokeStyle = `rgba(57,255,20,${glow * 0.4})`;
+      ctx.lineWidth = 6;
+      ctx.strokeRect(3, 3, W - 6, H - 6);
+      
+      // Landing guidance beam from moon (animated progression)
+      if (progress > 0.1) {
+        const moonProgress = Math.max(0, questionsAnsweredThisGame - 3);
+        const moonX = W / 2;
+        const moonY = 80 - (moonProgress * 15);
+        const moonRadius = 30 + (moonProgress * 10);
+        
+        // Calculate beam progression - starts from moon, extends toward rocket
+        const beamStartProgress = Math.max(0, (progress - 0.1) / 0.3); // 0.1 to 0.4 progress
+        const totalDistance = Math.hypot(ship.x - moonX, (ship.y - 10) - (moonY + moonRadius));
+        const beamLength = totalDistance * Math.min(1, beamStartProgress * 2);
+        
+        // Calculate beam end point (extends from moon toward rocket)
+        const angle = Math.atan2((ship.y - 10) - (moonY + moonRadius), ship.x - moonX);
+        const beamEndX = moonX + Math.cos(angle) * beamLength;
+        const beamEndY = (moonY + moonRadius) + Math.sin(angle) * beamLength;
+        
+        // Guidance beam with pulsing effect
+        const pulseIntensity = 0.4 + Math.sin(frame * 0.12) * 0.3;
+        ctx.strokeStyle = `rgba(200,216,232,${pulseIntensity})`;
+        ctx.lineWidth = 8;
+        ctx.beginPath();
+        ctx.moveTo(moonX, moonY + moonRadius);
+        ctx.lineTo(beamEndX, beamEndY);
+        ctx.stroke();
+        
+        // Inner bright core of beam
+        ctx.strokeStyle = `rgba(255,255,255,${pulseIntensity * 0.6})`;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(moonX, moonY + moonRadius);
+        ctx.lineTo(beamEndX, beamEndY);
+        ctx.stroke();
+        
+        // Landing pad glow on moon (appears when beam reaches ship)
+        if (beamStartProgress >= 1) {
+          ctx.fillStyle = `rgba(57,255,20,${0.5 + Math.sin(frame * 0.25) * 0.3})`;
+          ctx.fillRect(moonX - 15, moonY + moonRadius - 3, 30, 4);
+          
+          // Landing pad activation particles
+          for (let i = 0; i < 4; i++) {
+            const padX = moonX + (Math.random() - 0.5) * 30;
+            const padY = moonY + moonRadius + Math.random() * 8;
+            ctx.fillStyle = `rgba(57,255,20,${0.6 + Math.random() * 0.4})`;
+            ctx.fillRect(padX, padY, 1, 1);
+          }
+        }
+        
+        // Beam connection effects when it reaches ship
+        if (beamStartProgress >= 1 && progress > 0.4) {
+          // Energy field around ship when in beam
+          const fieldRadius = 25 + Math.sin(frame * 0.2) * 5;
+          ctx.strokeStyle = `rgba(200,216,232,${0.3 + Math.sin(frame * 0.18) * 0.2})`;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(ship.x, ship.y, fieldRadius, 0, Math.PI * 2);
+          ctx.stroke();
+          
+          // Landing approach sparkles
+          for (let i = 0; i < 8; i++) {
+            const sparkX = ship.x + (Math.random() - 0.5) * 40;
+            const sparkY = ship.y + 10 + Math.random() * 20;
+            const sparkSize = 1 + Math.random() * 2;
+            ctx.fillStyle = `rgba(200,216,232,${0.7 + Math.random() * 0.3})`;
+            ctx.fillRect(sparkX, sparkY, sparkSize, sparkSize);
+          }
+        }
+        
+        // Final landing dust effect
+        if (progress > 0.8) {
+          for (let i = 0; i < 8; i++) {
+            const angle = (i / 8) * Math.PI * 2;
+            const dustX = ship.x + Math.cos(angle) * 20;
+            const dustY = ship.y + 20 + Math.sin(angle) * 10;
+            ctx.fillStyle = `rgba(200,216,232,${0.4 + Math.random() * 0.3})`;
+            ctx.fillRect(dustX, dustY, 3, 3);
+          }
+        }
+      }
+    }
+  }
+
+  // Crash effects
+  if (rocketCrashed) {
+    // Red warning effects
+    const intensity = Math.sin(frame * 0.4) * 0.5 + 0.5;
+    ctx.strokeStyle = `rgba(252,61,33,${0.3 + intensity * 0.4})`;
+    ctx.lineWidth = 8;
+    ctx.strokeRect(4, 4, W - 8, H - 8);
+    
+    // Sparks and debris
+    for (let i = 0; i < 12; i++) {
+      const x = ship.x + (Math.random() - 0.5) * 60;
+      const y = ship.y + (Math.random() - 0.5) * 60;
+      const sparkSize = 2 + Math.random() * 3;
+      ctx.fillStyle = `rgba(255,${100 + Math.random() * 100},0,${0.6 + Math.random() * 0.4})`;
+      ctx.fillRect(x, y, sparkSize, sparkSize);
+    }
+  }
+
   // Nebulae
   nebulae.forEach(n => {
     const grd = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r);
@@ -1117,10 +1372,15 @@ function drawBackground() {
 }
 
 function drawMoon() {
-  if (phase < 3) return;
+  // Show moon starting from Wave 4 (questionsAnsweredThisGame >= 4 OR phase >= 3)
+  const shouldShowMoon = phase >= 3 || questionsAnsweredThisGame >= 4;
+  if (!shouldShowMoon) return;
+  
   const mx = W / 2;
-  const my = 60 + (phase === 3 ? Math.min(40, phaseProgress / 8) : 0);
-  const mr = 35 + (phase === 3 ? Math.min(25, phaseProgress / 25) : 0);
+  // Moon gets closer as we progress through waves 4 and 5
+  const moonProgress = Math.max(0, questionsAnsweredThisGame - 3); // 0 for wave 4, 1+ for wave 5
+  const my = 80 - (moonProgress * 15); // Moon gets closer
+  const mr = 30 + (moonProgress * 10); // Moon gets bigger
 
   // Glow
   const g = ctx.createRadialGradient(mx, my, 0, mx, my, mr * 2);
@@ -1157,12 +1417,68 @@ function drawShip() {
   const s = ship;
   if (s.invincible > 0 && Math.floor(frame / 4) % 2 === 0) return;
 
-  ctx.save();
-  ctx.translate(s.x | 0, s.y | 0);
+  // Don't draw ship during death animation (it's exploded)
+  if (gameEndAnimation && gameEndType === 'death') return;
 
-  // Engine flames
+  // Calculate position during animations
+  let drawX = s.x;
+  let drawY = s.y;
+  let rotation = 0;
+  
+  if (gameEndAnimation && gameEndType === 'victory') {
+    // Landing animation - ship follows guiding light path
+    const progress = 1 - (gameEndTimer / 300);
+    const moonProgress = Math.max(0, questionsAnsweredThisGame - 3);
+    const moonX = W / 2;
+    const moonY = 80 - (moonProgress * 15);
+    const moonRadius = 30 + (moonProgress * 10);
+    const targetY = moonY + moonRadius - 8; // Land on moon surface
+    const targetX = moonX; // Center on moon
+    
+    // Phase 1: Wait for guiding beam to reach ship (0-0.4 progress)
+    if (progress < 0.4) {
+      // Ship stays in place, maybe slight hover
+      drawY = s.y + Math.sin(frame * 0.1) * 2;
+      drawX = s.x + Math.sin(frame * 0.15) * 1;
+    } else {
+      // Phase 2: Follow the beam path to moon (0.4-1.0 progress)
+      const followProgress = (progress - 0.4) / 0.6;
+      const smoothFollow = followProgress * followProgress * (3 - 2 * followProgress); // Ease in-out
+      
+      // Move both X and Y towards moon center
+      drawX = s.x + (targetX - s.x) * smoothFollow;
+      drawY = s.y + (targetY - s.y) * smoothFollow;
+      
+      // Gentle wobble during final approach
+      if (followProgress > 0.7) {
+        rotation = Math.sin(frame * 0.25) * 0.02 * (1 - followProgress);
+        drawX += Math.sin(frame * 0.2) * 3 * (1 - followProgress);
+      }
+      
+      // Point ship slightly toward moon during descent
+      const angleToMoon = Math.atan2(targetY - drawY, targetX - drawX);
+      rotation += angleToMoon * 0.1;
+    }
+    
+  } else if (rocketMoving) {
+    // Slowly move ship upward during advancement animation
+    const progress = 1 - (rocketMoveTimer / 240);
+    drawY = s.y - (progress * 60); // Move up 60 pixels over animation duration
+    rotation = -0.1; // Slight upward tilt
+  }
+  
+  ctx.save();
+  ctx.translate(drawX | 0, drawY | 0);
+  ctx.rotate(rotation);
+
+  // Engine flames (enhanced during rocket movement)
   s.thrustAnim = (s.thrustAnim + 0.4) % (Math.PI * 2);
-  const flameH = 10 + 6 * Math.abs(Math.sin(s.thrustAnim));
+  let flameH = 10 + 6 * Math.abs(Math.sin(s.thrustAnim));
+  
+  // Bigger flames during rocket movement
+  if (rocketMoving) {
+    flameH *= 2; // Double flame size during movement
+  }
 
   // Side thrusters
   ctx.fillStyle = '#FF6B00';
@@ -1256,6 +1572,112 @@ function drawAsteroid(a) {
     ctx.fillRect(-a.size/2, -a.size/2 - 5, (a.size * a.hp / a.maxHp), 2);
   }
 
+  ctx.restore();
+}
+
+function drawAnswerAsteroid(a) {
+  // Draw rotating asteroid body first
+  ctx.save();
+  ctx.translate(a.x | 0, a.y | 0);
+  ctx.rotate(a.rot); // Rotate the asteroid shape
+
+  // All answer asteroids have the same neutral color
+  const color = '#7C6A4A'; // Neutral brown color for all asteroids
+  const darkColor = '#5C4A2A';
+
+  // Large asteroid body (rotates)
+  ctx.fillStyle = color;
+  ctx.fillRect(-a.size/2, -a.size/2, a.size, a.size);
+  ctx.fillStyle = darkColor;
+  ctx.fillRect(-a.size/2 + 4, -a.size/2 + 4, a.size - 8, a.size - 8);
+  
+  // Large spikes (rotates)
+  ctx.fillStyle = color;
+  ctx.fillRect(-a.size/2 - 6, -4, 6, 8);
+  ctx.fillRect(a.size/2, -4, 6, 8);
+  ctx.fillRect(-4, -a.size/2 - 6, 8, 6);
+  ctx.fillRect(-4, a.size/2, 8, 6);
+  
+  // Add more irregular asteroid details (rotates)
+  ctx.fillStyle = darkColor;
+  ctx.fillRect(-a.size/4, -a.size/4, 6, 6);
+  ctx.fillRect(a.size/4 - 3, a.size/4 - 3, 4, 4);
+  ctx.fillRect(-a.size/3, a.size/3, 5, 3);
+
+  ctx.restore(); // End rotation for asteroid body
+
+  // Draw text and UI elements without rotation (always readable)
+  ctx.save();
+  ctx.translate(a.x | 0, a.y | 0);
+  // NO ROTATION HERE - text stays upright
+
+  // Answer text (dynamically sized to fit) - NEVER ROTATES
+  ctx.fillStyle = '#FFF';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  
+  // Available text area (leaving margin for spikes and HP bar)
+  const textAreaWidth = a.size - 16;
+  const textAreaHeight = a.size - 20;
+  
+  // Start with larger font and scale down if needed
+  let fontSize = 8;
+  let lines = [];
+  let lineHeight = 0;
+  
+  // Function to wrap text at given font size
+  function wrapText(text, maxWidth, font) {
+    ctx.font = font;
+    const words = text.split(' ');
+    const wrappedLines = [];
+    let currentLine = '';
+    
+    for (let word of words) {
+      const testLine = currentLine + (currentLine ? ' ' : '') + word;
+      const testWidth = ctx.measureText(testLine).width;
+      
+      if (testWidth <= maxWidth || !currentLine) {
+        currentLine = testLine;
+      } else {
+        wrappedLines.push(currentLine);
+        currentLine = word;
+      }
+    }
+    if (currentLine) wrappedLines.push(currentLine);
+    return wrappedLines;
+  }
+  
+  // Try different font sizes to find the best fit
+  for (let testSize = 12; testSize >= 6; testSize--) {
+    const font = `${testSize}px Arial, sans-serif`;
+    const testLines = wrapText(a.answerText, textAreaWidth, font);
+    const testLineHeight = testSize + 3;
+    const totalTextHeight = testLines.length * testLineHeight;
+    
+    if (totalTextHeight <= textAreaHeight) {
+      fontSize = testSize;
+      lines = testLines;
+      lineHeight = testLineHeight;
+      break;
+    }
+  }
+  
+  // Set final font and draw text (using more readable font)
+  ctx.font = `${fontSize}px Arial, sans-serif`;
+  ctx.shadowColor = '#000';
+  ctx.shadowBlur = 2;
+  const startY = -(lines.length - 1) * lineHeight / 2;
+  
+  lines.forEach((line, i) => {
+    ctx.fillText(line, 0, startY + i * lineHeight);
+  });
+  ctx.shadowBlur = 0;
+
+  // HP bar (same color for all) - NEVER ROTATES
+  ctx.fillStyle = '#FF6B1A';
+  const barWidth = a.size;
+  ctx.fillRect(-barWidth/2, -a.size/2 - 8, (barWidth * a.hp / a.maxHp), 3);
+  
   ctx.restore();
 }
 
@@ -1425,78 +1847,171 @@ let questionIndex = 0; // walk through pre-picked 5
 function triggerFinOpsEvent() {
   if (state !== 'playing') return;
   if (questionIndex >= FINOPS_EVENTS.length) return; // out of questions
-  state = 'event';
+  if (questionActive || questionWarning) return; // already have a question active or warning
+  
+  // Don't clear asteroids - let them continue flowing naturally
+  // asteroids = []; // REMOVED - keep asteroids flowing
+  
+  // Start warning phase
+  questionWarning = true;
+  questionWarningTimer = 120; // 2 seconds warning at 60fps
+  
   const event = FINOPS_EVENTS[questionIndex];
   questionIndex++;
-
-  const modal = document.getElementById('event-modal');
-  document.getElementById('event-icon').textContent = event.icon;
-  document.getElementById('event-title').innerHTML =
-    `<div style="font-size:6px;color:var(--gold);margin-bottom:4px">★ ${event.pillar} ★ Q${questionIndex}/5</div>${event.title}`;
-  document.getElementById('event-desc').textContent = event.desc;
-
-  const optsDiv = document.getElementById('event-options');
-  optsDiv.innerHTML = '';
-
-  // Shuffle answer options so correct isn't always first
-  const shuffled = [...event.options].sort(() => Math.random() - 0.5);
-
-  shuffled.forEach((opt) => {
-    const btn = document.createElement('button');
-    btn.className = 'event-option';
-    btn.textContent = opt.text;
-    btn.onclick = () => handleEventChoice(opt, optsDiv);
-    optsDiv.appendChild(btn);
-  });
-
-  modal.classList.add('show');
+  currentQuestion = event;
+  
+  // Show warning message
+  announceQuestionWarning();
 }
 
-function handleEventChoice(option, optsDiv) {
-  optsDiv.innerHTML = '';
-  const fb = document.createElement('div');
-  fb.className = option.correct ? 'feedback-correct' : 'feedback-wrong';
-  fb.textContent = option.feedback;
-  optsDiv.appendChild(fb);
+function announceQuestionWarning() {
+  const el = document.getElementById('wave-announce');
+  el.innerHTML = '⚠️ BIG ASTEROIDS INCOMING! ⚠️<br>PREPARE FOR FINOPS CHALLENGE!';
+  el.style.opacity = '1';
+  el.style.color = 'var(--nasa-red)';
+  el.style.fontSize = '10px';
+  el.style.textShadow = '0 0 15px var(--nasa-red)';
+}
 
+function startQuestionAsteroids() {
+  if (!currentQuestion) return;
+  
+  questionActive = true;
+  questionWarning = false;
+  
+  // Show question at top of screen
+  const questionDisplay = document.getElementById('question-display');
+  document.getElementById('question-icon').textContent = currentQuestion.icon;
+  document.getElementById('question-title').innerHTML =
+    `★ ${currentQuestion.pillar} ★ Q${questionIndex}/5 - ${currentQuestion.title}`;
+  document.getElementById('question-desc').textContent = currentQuestion.desc;
+  questionDisplay.classList.add('show');
+
+  // Create 3 large answer asteroids coming from the top
+  const shuffled = [...currentQuestion.options].sort(() => Math.random() - 0.5);
+  const spacing = W / 4;
+  const startX = spacing;
+  
+  shuffled.forEach((opt, index) => {
+    const x = startX + (index * spacing);
+    const y = -100; // Start above screen
+    
+    answerAsteroids.push({
+      x: x,
+      y: y,
+      vx: 0,
+      vy: 1.5, // Slow descent
+      rot: 0,
+      rotSpeed: (Math.random() - 0.5) * 0.04, // Slow rotation for asteroid body
+      size: 80,
+      hp: questionHitsRequired,
+      maxHp: questionHitsRequired,
+      option: opt,
+      isCorrect: opt.correct,
+      answerText: opt.text,
+      targetY: H * 0.35, // Where they should stop
+    });
+  });
+  
+  // Hide warning
+  document.getElementById('wave-announce').style.opacity = '0';
+}
+
+function handleAnswerAsteroidDestroyed(asteroid) {
+  const option = asteroid.option;
+  questionActive = false;
+  currentQuestion = null;
+  questionsAnsweredThisGame++;
+  
+  // Hide question display
+  document.getElementById('question-display').classList.remove('show');
+  
+  // Clear all answer asteroids
+  answerAsteroids = [];
+  
   if (option.correct) {
     score += 500 * phase;
-    budget = Math.min(STARTING_BUDGET, budget + QUIZ_REFUND);
+    budget = Math.min(STARTING_BUDGET, budget + QUIZ_REFUND); // Cap budget at starting amount
     efficiency = Math.min(100, efficiency + 10);
     eventsAnswered++;
-    spawnSpendTag('+$' + QUIZ_REFUND + ' SAVED!', W / 2, H / 2, '#39FF14');
+    spawnSpendTag('+$' + QUIZ_REFUND + ' SAVED!', asteroid.x, asteroid.y - 20, '#39FF14');
+    
+    // Start rocket movement animation through cleared asteroid field
+    rocketMoving = true;
+    rocketMoveTimer = 240; // 4 seconds at 60fps for slower animation
+    announceRocketMovement();
   } else {
-    budget = Math.max(0, budget - QUIZ_PENALTY);
+    // Wrong answer: rocket crashes into chosen asteroid
+    const wrongCost = (BULLET_COST * questionHitsRequired) + QUIZ_PENALTY;
+    budget = Math.max(0, budget - wrongCost);
     efficiency = Math.max(0, efficiency - 15);
-    spawnSpendTag('-$' + QUIZ_PENALTY + ' WASTE!', W / 2, H / 2, '#FC3D21');
+    spawnSpendTag('-$' + wrongCost + ' WASTE!', asteroid.x, asteroid.y - 20, '#FC3D21');
+    
+    // Start crash animation
+    rocketCrashed = true;
+    rocketCrashTimer = 180; // 3 seconds crash sequence
+    announceCrash();
+    
+    // Create explosion at crash site
+    spawnExplosion(asteroid.x, asteroid.y, true);
   }
+  
+  // Check if budget killed by wrong answer
+  if (budget <= 0) {
+    deathReason = 'BUDGET DEPLETED';
+    startGameEndAnimation('death');
+  }
+  
+  // Reset event trigger flag
+  eventTriggered = false;
+}
 
-  const cont = document.createElement('button');
-  cont.className = 'pixel-btn';
-  cont.textContent = 'CONTINUE MISSION';
-  cont.style.marginTop = '10px';
-  cont.onclick = () => {
-    document.getElementById('event-modal').classList.remove('show');
-    eventTriggered = false;
-    // Check if budget killed by wrong answer
-    if (budget <= 0) {
-      deathReason = 'BUDGET DEPLETED';
-      state = 'dead';
-      showOverlay('dead');
-    } else {
-      state = 'playing';
-    }
-  };
-  optsDiv.appendChild(cont);
+function announceRocketMovement() {
+  const el = document.getElementById('wave-announce');
+  el.innerHTML = `🚀 PATH CLEARED! ADVANCING! 🚀`;
+  el.style.opacity = '1';
+  el.style.color = 'var(--green)';
+  el.style.fontSize = '12px';
+  el.style.textShadow = '0 0 15px var(--green)';
+  setTimeout(() => { el.style.opacity = '0'; }, 2000);
+}
+
+function announceCrash() {
+  const el = document.getElementById('wave-announce');
+  el.innerHTML = `💥 COLLISION! SYSTEMS DAMAGED! 💥<br>HULL BREACH DETECTED`;
+  el.style.opacity = '1';
+  el.style.color = 'var(--nasa-red)';
+  el.style.fontSize = '10px';
+  el.style.textShadow = '0 0 15px var(--nasa-red)';
+  setTimeout(() => { el.style.opacity = '0'; }, 3000);
+}
+
+function startGameEndAnimation(type) {
+  gameEndAnimation = true;
+  gameEndTimer = 300; // 5 seconds at 60fps
+  gameEndType = type;
+  
+  if (type === 'death') {
+    state = 'dead';
+    // Clear all game objects for clean death animation
+    asteroids = [];
+    answerAsteroids = [];
+    coins = [];
+  } else if (type === 'victory') {
+    state = 'won';
+    // Clear asteroids but keep some visual elements
+    asteroids = [];
+    answerAsteroids = [];
+  }
 }
 
 // ── Update ─────────────────────────────────────────────────────────
 function updatePhase() {
   document.getElementById('phase-num').textContent = phase;
   const labels = [
-    'WK 1-2 · PRE-LAUNCH',
-    'WK 3 · TRANSLUNAR',
-    'WK 4 · LUNAR LANDING',
+    'Q1-2 · PRE-LAUNCH',
+    'Q3-4 · TRANSLUNAR',
+    'Q5 · LUNAR APPROACH',
   ];
   document.getElementById('phase-label').textContent = labels[phase - 1];
 }
@@ -1516,10 +2031,13 @@ function updateGame() {
   if ((keys[' '] || keys['Space'] || touch.fire) && ship.shootCooldown <= 0 && budget > BULLET_COST) {
     bullets.push({ x: ship.x, y: ship.y - 18, vy: -8 });
     let shotCost = BULLET_COST;
+    bulletsShot++; // Track bullets for accuracy
+    
     if (eventsAnswered >= 2) {
       bullets.push({ x: ship.x - 7, y: ship.y - 8, vy: -8 });
       bullets.push({ x: ship.x + 7, y: ship.y - 8, vy: -8 });
       shotCost = BULLET_COST * 3;
+      bulletsShot += 2; // Track additional bullets
     }
     budget = Math.max(0, budget - shotCost);
     ship.shootCooldown = 14;
@@ -1531,16 +2049,132 @@ function updateGame() {
   bullets.forEach(b => b.y += b.vy);
   bullets = bullets.filter(b => b.y > -10);
 
-  // Spawn
-  const spawnRate = Math.max(55, 110 - phase * 15);
-  if (frame % spawnRate === 0) spawnAsteroid();
-  if (frame % 200 === 0) spawnCoin();
+  // Always-on cloud spend (depleting monthly budget) - PAUSED during questions
+  if (frame % 60 === 0 && !questionActive && !questionWarning) {
+    const burnRate = BURN_RATE_BASE + (100 - efficiency) / 15;
+    const buff = ship.savingsBuff > 0 ? 0.5 : 1;
+    budget = Math.max(0, budget - burnRate * buff);
+    if (budget <= 0) {
+      deathReason = 'BUDGET DEPLETED';
+      startGameEndAnimation('death');
+    }
+  }
 
-  // FinOps event trigger every ~1200 frames (~20s play time), only if questions remain
-  if (frame % 1200 === 100 && !eventTriggered && state === 'playing' && questionIndex < FINOPS_EVENTS.length) {
-    eventTriggered = true;
-    triggerFinOpsEvent();
-    return;
+  // Spawn (only if no question active or warning)
+  if (!questionActive && !questionWarning && waveActive) {
+    // Only spawn if we haven't reached the asteroid limit for this wave
+    if (waveAsteroidsSpawned < MAX_ASTEROIDS_PER_WAVE) {
+      const spawnRate = Math.max(55, 110 - phase * 15);
+      if (frame % spawnRate === 0) {
+        spawnAsteroid();
+        waveAsteroidsSpawned++;
+      }
+    }
+    if (frame % 200 === 0) spawnCoin();
+    
+    // Update wave timer
+    waveTimer++;
+  }
+
+  // Question warning countdown
+  if (questionWarning) {
+    questionWarningTimer--;
+    if (questionWarningTimer <= 0) {
+      startQuestionAsteroids();
+    }
+    return; // Don't update other game elements during warning
+  }
+
+  // Rocket movement animation countdown
+  if (rocketMoving) {
+    rocketMoveTimer--;
+    if (rocketMoveTimer <= 0) {
+      rocketMoving = false;
+    }
+    return; // Don't update other game elements during rocket movement
+  }
+
+  // Skip game updates during end animation
+  if (gameEndAnimation) {
+    return; // Don't update other game elements during end animation
+  }
+
+  // Rocket crash animation countdown
+  if (rocketCrashed) {
+    rocketCrashTimer--;
+    if (rocketCrashTimer <= 0) {
+      rocketCrashed = false;
+      // After crash, proceed to wave (wrong answers still trigger waves)
+      if (questionsAnsweredThisGame <= 5 && !waveCompleted) {
+        waveActive = true;
+        waveTimer = 0;
+        waveAsteroidsSpawned = 0;
+        announceAsteroidWave(questionsAnsweredThisGame - 1);
+      }
+    }
+    return; // Don't update other game elements during crash sequence
+  }
+
+  // Game flow management: Question -> Wave -> Question -> Wave...
+  if (!waveActive && !questionActive && !questionWarning && !rocketMoving && !rocketCrashed) {
+    
+    if (questionsAnsweredThisGame === 0) {
+      // Game start - trigger first question immediately
+      waveClearTimer++;
+      if (waveClearTimer > 60) {
+        waveClearTimer = 0;
+        eventTriggered = true;
+        triggerFinOpsEvent();
+        return;
+      }
+    } else if (!waveCompleted && questionsAnsweredThisGame > 0 && questionsAnsweredThisGame <= 5) {
+      // Just answered a question (correct or incorrect) - start corresponding wave
+      waveClearTimer++;
+      if (waveClearTimer > 60) {
+        waveClearTimer = 0;
+        waveActive = true;
+        waveCompleted = false;
+        waveTimer = 0;
+        waveAsteroidsSpawned = 0;
+        
+        // Announce incoming asteroids (use questionsAnsweredThisGame for wave number)
+        announceAsteroidWave(questionsAnsweredThisGame - 1);
+      }
+    } else if (waveCompleted && questionsAnsweredThisGame < FINOPS_EVENTS.length) {
+      // Wave completed - start next question
+      waveClearTimer++;
+      if (waveClearTimer > 60) {
+        waveClearTimer = 0;
+        waveCompleted = false; // Reset flag
+        eventTriggered = true;
+        triggerFinOpsEvent();
+        return;
+      }
+    } else if (questionsAnsweredThisGame >= 5 && waveCompleted) {
+      // All questions AND waves completed (must finish Wave 5)
+      savingsBonus = Math.floor(budget * 5);
+      score += savingsBonus;
+      startGameEndAnimation('victory');
+      return;
+    }
+  }
+
+  // Check if wave should end - only based on time or all asteroids spawned
+  if (waveActive && !questionActive && !questionWarning) {
+    const waveTimeExpired = waveTimer >= WAVE_DURATION;
+    const allAsteroidsSpawned = waveAsteroidsSpawned >= MAX_ASTEROIDS_PER_WAVE;
+    
+    // Wave ends when: time expires OR all asteroids have been spawned AND naturally cleared screen
+    if (waveTimeExpired || (allAsteroidsSpawned && asteroids.length === 0)) {
+      // End wave and mark as completed
+      waveActive = false;
+      waveCompleted = true; // Mark wave as completed
+      waveTimer = 0;
+      waveAsteroidsSpawned = 0;
+      
+      // DON'T clear asteroids - let them flow naturally off screen
+      // asteroids = []; // REMOVED - let asteroids continue their natural movement
+    }
   }
 
   // Update asteroids
@@ -1551,31 +2185,70 @@ function updateGame() {
     if (a.x < 10 || a.x > W - 10) a.vx *= -1;
   });
   asteroids = asteroids.filter(a => a.y < H + 30);
+  
+  // Update answer asteroids (descending from top with rotation)
+  answerAsteroids.forEach(a => {
+    if (a.y < a.targetY) {
+      a.y += a.vy;
+    } else {
+      a.y = a.targetY;
+      a.vy = 0; // Stop when reaching target position
+    }
+    a.rot += a.rotSpeed; // Rotate the asteroid body
+  });
 
   // Update coins
   coins.forEach(c => c.y += c.vy);
   coins = coins.filter(c => c.y < H + 20);
 
   // Bullet ↔ Asteroid
-  bullets.forEach((b, bi) => {
-    asteroids.forEach((a, ai) => {
+  for (let bi = bullets.length - 1; bi >= 0; bi--) {
+    const b = bullets[bi];
+    let bulletHit = false;
+    
+    // Check regular asteroids
+    for (let ai = asteroids.length - 1; ai >= 0; ai--) {
+      const a = asteroids[ai];
       const d = Math.hypot(b.x - a.x, b.y - a.y);
       if (d < a.size / 1.5 + 4) {
         a.hp--;
         bullets.splice(bi, 1);
+        bulletHit = true;
+        bulletsHit++; // Track hits for accuracy
         spawnExplosion(b.x, b.y);
         if (a.hp <= 0) {
           score += 100 * phase;
           spawnExplosion(a.x, a.y, true);
           asteroids.splice(ai, 1);
         }
+        break;
       }
-    });
-  });
+    }
+    
+    // Check answer asteroids (when question is active)
+    if (!bulletHit && questionActive) {
+      for (let ai = answerAsteroids.length - 1; ai >= 0; ai--) {
+        const a = answerAsteroids[ai];
+        const d = Math.hypot(b.x - a.x, b.y - a.y);
+        if (d < a.size / 1.5 + 4) {
+          a.hp--;
+          bullets.splice(bi, 1);
+          bulletsHit++; // Track hits for accuracy
+          spawnExplosion(b.x, b.y);
+          if (a.hp <= 0) {
+            spawnExplosion(a.x, a.y, true);
+            handleAnswerAsteroidDestroyed(a);
+          }
+          break;
+        }
+      }
+    }
+  }
 
   // Ship ↔ Asteroid
   if (ship.invincible === 0) {
-    asteroids.forEach((a, ai) => {
+    for (let ai = asteroids.length - 1; ai >= 0; ai--) {
+      const a = asteroids[ai];
       const d = Math.hypot(ship.x - a.x, ship.y - a.y);
       if (d < a.size / 1.5 + 12) {
         budget = Math.max(0, budget - ASTEROID_PENALTY);
@@ -1586,20 +2259,39 @@ function updateGame() {
         ship.invincible = 90;
         if (budget <= 0) {
           deathReason = 'BUDGET DEPLETED';
-          state = 'dead';
-          showOverlay('dead');
+          startGameEndAnimation('death');
         }
+        break;
       }
-    });
+    }
+    
+    // Ship ↔ Answer Asteroid (during questions)
+    if (questionActive) {
+      answerAsteroids.forEach((a, ai) => {
+        const d = Math.hypot(ship.x - a.x, ship.y - a.y);
+        if (d < a.size / 1.5 + 12) {
+          budget = Math.max(0, budget - ASTEROID_PENALTY);
+          efficiency = Math.max(0, efficiency - 8);
+          spawnExplosion(a.x, a.y, false);
+          spawnSpendTag('-$' + ASTEROID_PENALTY + ' COLLISION!', a.x, a.y - 10, '#FC3D21');
+          ship.invincible = 90;
+          if (budget <= 0) {
+            deathReason = 'BUDGET DEPLETED';
+            startGameEndAnimation('death');
+          }
+        }
+      });
+    }
   }
 
   // Ship ↔ Coin
-  coins.forEach((c, ci) => {
+  for (let ci = coins.length - 1; ci >= 0; ci--) {
+    const c = coins[ci];
     const d = Math.hypot(ship.x - c.x, ship.y - c.y);
     if (d < 18) {
       coinsCollected[c.type]++;
       const refund = COIN_REFUND[c.type] || 30;
-      budget = Math.min(STARTING_BUDGET, budget + refund);
+      budget = Math.min(STARTING_BUDGET, budget + refund); // Cap budget at starting amount
       score += 75;
       efficiency = Math.min(100, efficiency + 2);
       if (c.type === 'governance') ship.savingsBuff = SAVINGS_BUFF_FRAMES;
@@ -1607,23 +2299,19 @@ function updateGame() {
       spawnSpendTag('+$' + refund + ' SAVED', c.x, c.y - 10, '#FFB300');
       coins.splice(ci, 1);
     }
-  });
-
-  // Always-on cloud spend (depleting monthly budget)
-  if (frame % 60 === 0) {
-    const burnRate = BURN_RATE_BASE + (100 - efficiency) / 15;
-    const buff = ship.savingsBuff > 0 ? 0.5 : 1;
-    budget = Math.max(0, budget - burnRate * buff);
-    if (budget <= 0) {
-      deathReason = 'BUDGET DEPLETED';
-      state = 'dead';
-      showOverlay('dead');
-    }
   }
 
-  // Phase advance
-  if (phaseProgress > PHASE_GOAL && phase < 3) {
-    phase++;
+  // Phase advance based on game progression (not just correct answers)
+  // Phase 1: Questions 1-2, Phase 2: Questions 3-4, Phase 3: Question 5 (moon appears)
+  let targetPhase = 1;
+  if (questionsAnsweredThisGame >= 4) {
+    targetPhase = 3; // Question 4+ shows moon
+  } else if (questionsAnsweredThisGame >= 2) {
+    targetPhase = 2; // Questions 2-3
+  }
+  
+  if (targetPhase > phase && phase < 3) {
+    phase = targetPhase;
     phaseProgress = 0;
     budget = Math.max(0, budget - PHASE_TRANSITION_COST);
     spawnSpendTag('-$' + PHASE_TRANSITION_COST + ' (NEW PHASE)', W / 2, 80, '#FF6B1A');
@@ -1631,14 +2319,8 @@ function updateGame() {
     announceWave();
     if (budget <= 0) {
       deathReason = 'BUDGET DEPLETED';
-      state = 'dead';
-      showOverlay('dead');
+      startGameEndAnimation('death');
     }
-  } else if (phase === 3 && phaseProgress > 1800) {
-    savingsBonus = Math.floor(budget * 5);
-    score += savingsBonus;
-    state = 'won';
-    showOverlay('won');
   }
 
   // HUD
@@ -1652,29 +2334,85 @@ function updateGame() {
     budgetBar.classList.remove('crit');
     budgetBar.style.background = budget > 300 ? 'var(--gold)' : 'var(--nasa-red)';
   }
-  document.getElementById('eff-display').textContent = (efficiency | 0) + '%';
-  document.getElementById('eff-bar').style.width = efficiency + '%';
-  document.getElementById('eff-bar').style.background = efficiency > 50 ? 'var(--cyan)' : 'var(--nasa-red)';
+  // Calculate and display accuracy
+  const accuracy = bulletsShot > 0 ? Math.round((bulletsHit / bulletsShot) * 100) : 0;
+  document.getElementById('eff-display').textContent = accuracy + '%';
+  document.getElementById('eff-bar').style.width = accuracy + '%';
+  document.getElementById('eff-bar').style.background = accuracy > 50 ? 'var(--cyan)' : 'var(--nasa-red)';
+  
+  // Status display
+  if (rocketCrashed) {
+    document.getElementById('phase-label').textContent = '⚠️ SYSTEMS DAMAGED ⚠️';
+  } else if (rocketMoving) {
+    document.getElementById('phase-label').textContent = 'ADVANCING THROUGH CLEARED PATH';
+  } else if (waveActive) {
+    document.getElementById('phase-label').textContent = `ASTEROID FIELD (${eventsAnswered + 1}/5)`;
+  }
 }
 
 function announceWave() {
   const el = document.getElementById('wave-announce');
-  const msgs = ['', 'PHASE 2<br>TRANSLUNAR INJECTION', 'PHASE 3<br>FINAL APPROACH'];
+  const msgs = ['', 'PHASE 2<br>TRANSLUNAR INJECTION', 'PHASE 3<br>🌙 LUNAR APPROACH 🌙'];
   el.innerHTML = msgs[phase - 1] || '';
   el.style.opacity = '1';
+  el.style.color = phase >= 3 ? 'var(--moon)' : 'var(--cyan)';
   setTimeout(() => { el.style.opacity = '0'; }, 2500);
+}
+
+function announceAsteroidWave(waveNum) {
+  const el = document.getElementById('wave-announce');
+  el.innerHTML = `🌌 HUGE WAVE OF ASTEROIDS INCOMING! 🌌<br>(${waveNum + 1}/5)`;
+  el.style.opacity = '1';
+  el.style.color = 'var(--nasa-red)';
+  el.style.fontSize = '10px';
+  el.style.textShadow = '0 0 15px var(--nasa-red)';
+  setTimeout(() => { el.style.opacity = '0'; }, 3000);
 }
 
 // ── Render ────────────────────────────────────────────────────────
 function render() {
   ctx.clearRect(0, 0, W, H);
 
+  // Handle game end animation countdown here (outside updateGame)
+  if (gameEndAnimation) {
+    gameEndTimer--;
+    
+    // Show landing message during victory animation
+    if (gameEndType === 'victory') {
+      const progress = 1 - (gameEndTimer / 300);
+      if (progress > 0.3 && progress < 0.9) {
+        const el = document.getElementById('wave-announce');
+        el.innerHTML = `🌙 LUNAR LANDING IN PROGRESS 🌙`;
+        el.style.opacity = '1';
+        el.style.color = 'var(--green)';
+        el.style.fontSize = '12px';
+      } else if (progress >= 0.9) {
+        const el = document.getElementById('wave-announce');
+        el.innerHTML = `🎯 MISSION ACCOMPLISHED! 🎯`;
+        el.style.opacity = '1';
+        el.style.color = 'var(--gold)';
+        el.style.fontSize = '14px';
+      }
+    }
+    
+    if (gameEndTimer <= 0) {
+      gameEndAnimation = false;
+      document.getElementById('wave-announce').style.opacity = '0';
+      showOverlay(gameEndType === 'victory' ? 'won' : 'dead');
+    }
+  }
+
   drawBackground();
   drawMoon();
 
-  if (state === 'playing' || state === 'event' || state === 'dead') {
-    coins.forEach(drawCoin);
-    asteroids.forEach(drawAsteroid);
+  if (state === 'playing' || state === 'dead' || state === 'won') {
+    // Always draw coins and asteroids (rocket moves through them) - except during death animation
+    if (!(gameEndAnimation && gameEndType === 'death')) {
+      coins.forEach(drawCoin);
+      asteroids.forEach(drawAsteroid);
+    }
+    
+    answerAsteroids.forEach(drawAnswerAsteroid);
     bullets.forEach(drawBullet);
     drawShip();
     drawExplosions();
@@ -1797,7 +2535,7 @@ function showOverlay(type) {
       <h2 style="color:var(--nasa-red)">${deathReason}</h2>
       <div class="brief">
         FINAL ROI: ${score}<br>
-        EFFICIENCY: ${efficiency | 0}%<br>
+        ACCURACY: ${bulletsShot > 0 ? Math.round((bulletsHit / bulletsShot) * 100) : 0}%<br>
         PHASE: ${phase}/3
       </div>
       <div class="brief" style="color:rgba(200,216,232,0.5);font-size:6px">
@@ -1814,7 +2552,7 @@ function showOverlay(type) {
       <h2 style="color:var(--green)">★ ARTEMIS LANDED ★</h2>
       <div class="brief">
         SAVINGS BANK: $${budget | 0}K<br>
-        EFFICIENCY BONUS: +${savingsBonus} score<br>
+        ACCURACY BONUS: ${bulletsShot > 0 ? Math.round((bulletsHit / bulletsShot) * 100) : 0}%<br>
         FINAL ROI: ${score}<br>
         FINOPS DECISIONS: ${eventsAnswered}/5 CORRECT
       </div>
@@ -1890,12 +2628,20 @@ async function promptNicknameAndNumber(sc, showCombo) {
 function restartGame() {
   score = 0; budget = STARTING_BUDGET; efficiency = 80; phase = 1;
   frame = 0; phaseProgress = 0;
-  asteroids = []; coins = []; bullets = []; particles = []; explosions = [];
+  asteroids = []; answerAsteroids = []; coins = []; bullets = []; particles = []; explosions = [];
   spendTags = [];
   savingsBonus = 0;
   deathReason = 'BUDGET DEPLETED';
   coinsCollected = { visibility: 0, governance: 0, savings: 0 };
   eventTriggered = false; eventsAnswered = 0; questionIndex = 0;
+  questionActive = false; currentQuestion = null;
+  questionWarning = false; questionWarningTimer = 0;
+  waveActive = false; waveClearTimer = 0; questionsAnsweredThisGame = 0;
+  waveTimer = 0; waveAsteroidsSpawned = 0; waveCompleted = false;
+  rocketMoving = false; rocketMoveTimer = 0;
+  rocketCrashed = false; rocketCrashTimer = 0;
+  gameEndAnimation = false; gameEndTimer = 0; gameEndType = '';
+  bulletsShot = 0; bulletsHit = 0;
   overlayShown = false;
   pickGameQuestions(); // fresh 5 from pool of 30
   initShip();
@@ -1905,6 +2651,10 @@ function restartGame() {
   document.getElementById('budget-bar').classList.remove('crit');
   document.getElementById('overlay').style.display = 'none';
   document.getElementById('event-modal').classList.remove('show');
+  document.getElementById('question-display').classList.remove('show');
+  document.getElementById('wave-announce').style.opacity = '0';
+  
+  // Game will start with first question through normal flow
 }
 
 // ── Input ──────────────────────────────────────────────────────────
