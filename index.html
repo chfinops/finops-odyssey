@@ -1885,7 +1885,7 @@ function startQuestionAsteroids() {
       option: opt,
       isCorrect: opt.correct,
       answerText: opt.text,
-      targetY: H * 0.35, // Where they should stop
+      targetY: H * 0.45, // Where they should stop
     });
   });
   
@@ -2017,6 +2017,12 @@ function updateGame() {
     }
     budget = Math.max(0, budget - shotCost);
     ship.shootCooldown = 14;
+    
+    // Check if budget depleted from shooting during questions
+    if (budget <= 0) {
+      deathReason = 'BUDGET DEPLETED';
+      startGameEndAnimation('death');
+    }
   }
   if (ship.shootCooldown > 0) ship.shootCooldown--;
   if (ship.savingsBuff > 0) ship.savingsBuff--;
