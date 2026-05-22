@@ -547,7 +547,25 @@
 // ── Supabase ──────────────────────────────────────────────────────
 const SUPABASE_URL = 'https://bruyhlosyllqciutlujx.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_9EWwL61RLG563gDGv49iNQ_9BFPSp3U';
-const db = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: false,
+    storageKey: 'ch-booth-staff-auth',
+  },
+});
+
+async function requireSession() {
+  const { data: { session } } = await db.auth.getSession();
+  if (!session?.user) {
+    showStatus('Session expired. Please log in again.', true);
+    document.getElementById('admin-screen').style.display = 'none';
+    document.getElementById('login-screen').style.display = 'flex';
+    return null;
+  }
+  return session;
+}
 
 // ── Auth ──────────────────────────────────────────────────────────
 async function doLogin() {
@@ -645,6 +663,8 @@ async function doReset() {
   if (!pendingResetSize) return;
   const size = pendingResetSize;
 
+  if (!await requireSession()) return;
+
   showStatus('Generating new pool...');
 
   // Generate pool: pick `size` unique random numbers from 001-999
@@ -704,8 +724,10 @@ async function loadLeaderboard() {
 
 async function removeScore(id, nick, combo = '') {
   if (!confirm(`Remove "${nick}" from the leaderboard?`)) return;
-  const { error } = await db.from('scores').update({ removed: true }).eq('id', id);
+  if (!await requireSession()) return;
+  const { data, error } = await db.from('scores').update({ removed: true }).eq('id', id).select();
   if (error) { showStatus('Remove failed: ' + error.message, true); return; }
+  if (!data?.length) { showStatus('Remove returned 0 rows — RLS blocked or row missing.', true); return; }
   if (combo) await db.from('allocations').delete().eq('combination', combo);
   showStatus(`"${nick}" removed from leaderboard.`);
   loadLeaderboard();
