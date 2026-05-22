@@ -2644,8 +2644,25 @@ async function promptNicknameAndNumber(sc, showCombo) {
         input.focus();
         return;
       }
-      btn.textContent = 'SAVING...';
+      btn.textContent = 'CHECKING...';
       btn.disabled = true;
+
+      if (db) {
+        const { count } = await db.from('scores')
+          .select('id', { count: 'exact', head: true })
+          .eq('nickname', nick)
+          .eq('removed', false);
+        if (count > 0) {
+          input.value = '';
+          input.placeholder = 'NAME TAKEN — TRY ANOTHER';
+          input.focus();
+          btn.textContent = 'SUBMIT SCORE';
+          btn.disabled = false;
+          return;
+        }
+      }
+
+      btn.textContent = 'SAVING...';
 
       // Allocate combo first so it can be stored in the score row (1 INSERT, no UPDATE)
       const combo = await allocateCombinationNumber();
