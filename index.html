@@ -2551,7 +2551,7 @@ function showOverlay(type) {
       <button class="pixel-btn secondary" onclick="restartGame()">RETRY MISSION</button>
     `;
     o.style.display = 'flex';
-    promptNicknameAndNumber(score, false);
+    promptNicknameAndNumber(score, true);
   } else if (type === 'won') {
     o.innerHTML = `
       <h1 style="background:linear-gradient(180deg,#39FF14,#0B7C0F);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">UNDER<br>BUDGET!</h1>
