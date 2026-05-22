@@ -696,9 +696,9 @@ function closeConfirm() {
 }
 
 async function doReset() {
-  closeConfirm();
-  if (!pendingResetSize) return;
   const size = pendingResetSize;
+  closeConfirm();
+  if (!size) return;
 
   showStatus('Generating new pool...');
 
