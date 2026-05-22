@@ -733,7 +733,7 @@ async function doReset() {
   }
 
   showStatus(`Pool reset! ${size} new numbers generated. All previous combo codes cleared.`);
-  await loadPoolConfig();
+  await Promise.all([loadPoolConfig(), loadLeaderboard()]);
 }
 
 // ── Leaderboard ──────────────────────────────────────────────────
