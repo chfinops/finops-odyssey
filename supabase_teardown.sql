@@ -6,6 +6,7 @@
 
 -- Drop policies first (required before table drop)
 DROP POLICY IF EXISTS "public leaderboard read"    ON scores;
+DROP POLICY IF EXISTS "admin select all scores"    ON scores;
 DROP POLICY IF EXISTS "public score insert"        ON scores;
 DROP POLICY IF EXISTS "admin remove score"         ON scores;
 

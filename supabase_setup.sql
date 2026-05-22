@@ -70,6 +70,14 @@ CREATE POLICY "public leaderboard read"
   ON scores FOR SELECT
   USING (removed = false);
 
+-- scores: authenticated staff can read all rows (incl. removed) — needed
+-- for the RETURNING clause after admin soft-delete (otherwise the post-update
+-- row fails the public SELECT policy and the UPDATE errors with 42501).
+CREATE POLICY "admin select all scores"
+  ON scores FOR SELECT
+  TO authenticated
+  USING (true);
+
 -- scores: anyone can insert (no login to play)
 CREATE POLICY "public score insert"
   ON scores FOR INSERT
