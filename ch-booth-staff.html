@@ -694,7 +694,7 @@ async function loadLeaderboard() {
       <td style="font-family:monospace;font-weight:700;letter-spacing:2px;color:var(--gold)">${row.combination || '—'}</td>
       <td class="ts-val">${formatTime(row.created_at)}</td>
       <td>
-        <button class="btn-remove" onclick="removeScore('${row.id}', '${escHtml(row.nickname)}')">
+        <button class="btn-remove" onclick="removeScore('${row.id}', '${escHtml(row.nickname)}', '${row.combination || ''}')">
           REMOVE
         </button>
       </td>
@@ -702,10 +702,11 @@ async function loadLeaderboard() {
   `).join('');
 }
 
-async function removeScore(id, nick) {
+async function removeScore(id, nick, combo = '') {
   if (!confirm(`Remove "${nick}" from the leaderboard?`)) return;
   const { error } = await db.from('scores').update({ removed: true }).eq('id', id);
   if (error) { showStatus('Remove failed: ' + error.message, true); return; }
+  if (combo) await db.from('allocations').delete().eq('combination', combo);
   showStatus(`"${nick}" removed from leaderboard.`);
   loadLeaderboard();
 }
