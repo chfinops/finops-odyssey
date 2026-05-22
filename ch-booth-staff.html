@@ -556,9 +556,19 @@ const db = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
     detectSessionInUrl: false,
     storageKey: 'ch-booth-staff-auth',
   },
-  accessToken: async () => {
-    const { data: { session } } = await _dbRef.auth.getSession();
-    return session?.access_token ?? null;
+  global: {
+    fetch: async (input, init = {}) => {
+      const url = typeof input === 'string' ? input : input.url;
+      if (_dbRef && !url.includes('/auth/v1/')) {
+        const { data: { session } } = await _dbRef.auth.getSession();
+        if (session?.access_token) {
+          const headers = new Headers(init.headers || {});
+          headers.set('Authorization', `Bearer ${session.access_token}`);
+          init = { ...init, headers };
+        }
+      }
+      return fetch(input, init);
+    },
   },
 });
 _dbRef = db;
