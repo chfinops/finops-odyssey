@@ -547,6 +547,8 @@
 // ── Supabase ──────────────────────────────────────────────────────
 const SUPABASE_URL = 'https://bruyhlosyllqciutlujx.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_9EWwL61RLG563gDGv49iNQ_9BFPSp3U';
+
+let _dbRef;
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
     persistSession: true,
@@ -554,7 +556,12 @@ const db = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
     detectSessionInUrl: false,
     storageKey: 'ch-booth-staff-auth',
   },
+  accessToken: async () => {
+    const { data: { session } } = await _dbRef.auth.getSession();
+    return session?.access_token ?? null;
+  },
 });
+_dbRef = db;
 
 function bounceToLogin(msg) {
   showStatus(msg, true);
