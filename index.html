@@ -2730,6 +2730,53 @@ setupTouch('left-btn', 'left');
 setupTouch('right-btn', 'right');
 setupTouch('fire-btn', 'fire');
 
+// ── Full-canvas touch zones (works alongside buttons) ──────────────
+// Player can hold any finger on the canvas — left 40% = move left,
+// right 40% = move right, middle 20% = fire. Multi-touch supported,
+// so one thumb moves while another fires.
+const canvasTouches = new Map(); // touch.identifier -> 'left' | 'right' | 'fire'
+
+function canvasZoneFor(clientX) {
+  const rect = canvas.getBoundingClientRect();
+  const ratio = (clientX - rect.left) / rect.width;
+  if (ratio < 0.40) return 'left';
+  if (ratio > 0.60) return 'right';
+  return 'fire';
+}
+
+function applyCanvasTouches() {
+  const zones = new Set(canvasTouches.values());
+  touch.left  = zones.has('left');
+  touch.right = zones.has('right');
+  touch.fire  = zones.has('fire');
+}
+
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    canvasTouches.set(t.identifier, canvasZoneFor(t.clientX));
+  }
+  applyCanvasTouches();
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    if (canvasTouches.has(t.identifier)) {
+      canvasTouches.set(t.identifier, canvasZoneFor(t.clientX));
+    }
+  }
+  applyCanvasTouches();
+}, { passive: false });
+
+function endCanvasTouch(e) {
+  e.preventDefault();
+  for (const t of e.changedTouches) canvasTouches.delete(t.identifier);
+  applyCanvasTouches();
+}
+canvas.addEventListener('touchend', endCanvasTouch, { passive: false });
+canvas.addEventListener('touchcancel', endCanvasTouch, { passive: false });
+
 document.getElementById('start-btn').addEventListener('click', restartGame);
 
 // ── Boot ──────────────────────────────────────────────────────────
