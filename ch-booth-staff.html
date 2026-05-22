@@ -712,11 +712,9 @@ async function doReset() {
   );
   if (!delRes.ok) { showStatus(`Failed to clear allocations (${delRes.status}): ${delRes.error}`, true); return; }
 
-  const upRes = await adminFetch(`/rest/v1/pool_config`, {
-    method: 'POST',
-    headers: { 'Prefer': 'resolution=merge-duplicates' },
+  const upRes = await adminFetch(`/rest/v1/pool_config?id=eq.1`, {
+    method: 'PATCH',
     body: JSON.stringify({
-      id: 1,
       pool_size: size,
       pool_numbers: pool,
       updated_at: new Date().toISOString(),
