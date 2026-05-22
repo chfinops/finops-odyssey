@@ -548,7 +548,6 @@
 const SUPABASE_URL = 'https://bruyhlosyllqciutlujx.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_9EWwL61RLG563gDGv49iNQ_9BFPSp3U';
 
-let _dbRef;
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
     persistSession: true,
@@ -556,22 +555,29 @@ const db = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
     detectSessionInUrl: false,
     storageKey: 'ch-booth-staff-auth',
   },
-  global: {
-    fetch: async (input, init = {}) => {
-      const url = typeof input === 'string' ? input : input.url;
-      if (_dbRef && !url.includes('/auth/v1/')) {
-        const { data: { session } } = await _dbRef.auth.getSession();
-        if (session?.access_token) {
-          const headers = new Headers(init.headers || {});
-          headers.set('Authorization', `Bearer ${session.access_token}`);
-          init = { ...init, headers };
-        }
-      }
-      return fetch(input, init);
-    },
-  },
 });
-_dbRef = db;
+
+// Raw fetch with apikey + Bearer attached. supabase-js 2.106.1 does not reliably
+// inject the Authorization header on REST calls under publishable-key auth, so
+// admin mutations go through this path instead.
+async function adminFetch(path, opts = {}) {
+  const session = await requireSession();
+  if (!session) return { ok: false, status: 401, data: null, error: 'no session' };
+  const headers = {
+    'apikey': SUPABASE_PUBLISHABLE_KEY,
+    'Authorization': `Bearer ${session.access_token}`,
+    'Content-Type': 'application/json',
+    ...(opts.headers || {}),
+  };
+  const res = await fetch(`${SUPABASE_URL}${path}`, { ...opts, headers });
+  let data = null;
+  const text = await res.text();
+  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+  if (!res.ok) {
+    return { ok: false, status: res.status, data: null, error: data?.message || text || res.statusText };
+  }
+  return { ok: true, status: res.status, data, error: null };
+}
 
 function bounceToLogin(msg) {
   showStatus(msg, true);
@@ -694,27 +700,29 @@ async function doReset() {
   if (!pendingResetSize) return;
   const size = pendingResetSize;
 
-  if (!await requireSession()) return;
-
   showStatus('Generating new pool...');
 
-  // Generate pool: pick `size` unique random numbers from 001-999
   const all = Array.from({length: 999}, (_, i) => i + 1);
   const shuffled = all.sort(() => Math.random() - 0.5);
   const pool = shuffled.slice(0, size);
 
-  // Clear allocations
-  const { error: delErr } = await db.from('allocations').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-  if (delErr) { showStatus('Failed to clear allocations: ' + delErr.message, true); return; }
+  const delRes = await adminFetch(
+    `/rest/v1/allocations?id=neq.00000000-0000-0000-0000-000000000000`,
+    { method: 'DELETE' }
+  );
+  if (!delRes.ok) { showStatus(`Failed to clear allocations (${delRes.status}): ${delRes.error}`, true); return; }
 
-  // Upsert pool config (assumes single row with id=1)
-  const { error: upsertErr } = await db.from('pool_config').upsert({
-    id: 1,
-    pool_size: size,
-    pool_numbers: pool,
-    updated_at: new Date().toISOString()
+  const upRes = await adminFetch(`/rest/v1/pool_config`, {
+    method: 'POST',
+    headers: { 'Prefer': 'resolution=merge-duplicates' },
+    body: JSON.stringify({
+      id: 1,
+      pool_size: size,
+      pool_numbers: pool,
+      updated_at: new Date().toISOString(),
+    }),
   });
-  if (upsertErr) { showStatus('Failed to save pool: ' + upsertErr.message, true); return; }
+  if (!upRes.ok) { showStatus(`Failed to save pool (${upRes.status}): ${upRes.error}`, true); return; }
 
   showStatus(`Pool reset! New size: ${size}. ${size} numbers generated. Lock can now be set.`);
   await loadPoolConfig();
@@ -755,11 +763,16 @@ async function loadLeaderboard() {
 
 async function removeScore(id, nick, combo = '') {
   if (!confirm(`Remove "${nick}" from the leaderboard?`)) return;
-  if (!await requireSession()) return;
-  const { data, error } = await db.from('scores').update({ removed: true }).eq('id', id).select();
-  if (error) { showStatus('Remove failed: ' + error.message, true); return; }
-  if (!data?.length) { showStatus('Remove returned 0 rows — RLS blocked or row missing.', true); return; }
-  if (combo) await db.from('allocations').delete().eq('combination', combo);
+  const res = await adminFetch(`/rest/v1/scores?id=eq.${encodeURIComponent(id)}&select=*`, {
+    method: 'PATCH',
+    headers: { 'Prefer': 'return=representation' },
+    body: JSON.stringify({ removed: true }),
+  });
+  if (!res.ok) { showStatus(`Remove failed (${res.status}): ${res.error}`, true); return; }
+  if (!res.data?.length) { showStatus('Remove returned 0 rows — RLS blocked or row missing.', true); return; }
+  if (combo) {
+    await adminFetch(`/rest/v1/allocations?combination=eq.${encodeURIComponent(combo)}`, { method: 'DELETE' });
+  }
   showStatus(`"${nick}" removed from leaderboard.`);
   loadLeaderboard();
 }
