@@ -627,6 +627,7 @@
       <div class="how-to-row win"><span class="ico">🏆</span><span class="lbl">WIN</span><span class="txt">Land with budget left = bonus + prize</span></div>
     </div>
     <button class="pixel-btn" id="start-btn">LAUNCH MISSION</button>
+    <button class="pixel-btn secondary" id="skip-btn" style="font-size:6px;opacity:0.8">SKIP — JUST GET MY COMBO</button>
     <div class="controls-hint">
       TAP CONTROLS · OR USE ← → SPACE<br>
       DODGE WASTE · COLLECT COINS · ANSWER FINOPS<br>
@@ -2732,6 +2733,20 @@ setupTouch('right-btn', 'right');
 setupTouch('fire-btn', 'fire');
 
 document.getElementById('start-btn').addEventListener('click', restartGame);
+
+function skipToCombo() {
+  overlayShown = true;
+  const o = document.getElementById('overlay');
+  o.innerHTML = `
+    <h2 style="font-family:'Press Start 2P',monospace;font-size:14px;color:var(--cyan);text-align:center;line-height:1.6">
+      SKIP MISSION<br>
+      <span style="font-size:8px;color:rgba(200,216,232,0.7)">GET YOUR COMBO NUMBER</span>
+    </h2>
+    <div id="nick-section"></div>
+  `;
+  promptNicknameAndNumber(0, true);
+}
+document.getElementById('skip-btn').addEventListener('click', skipToCombo);
 
 // ── Boot ──────────────────────────────────────────────────────────
 async function boot() {
