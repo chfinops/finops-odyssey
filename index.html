@@ -2440,6 +2440,44 @@ try {
   db = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 } catch(e) { console.warn('Supabase not loaded, running in local mode'); }
 
+// ── Callsign profanity filter ─────────────────────────────────────
+const BAD_WORDS = [
+  'FUCK','FUCK','FUK','FUCC','FCK','FVCK','FU CK',
+  'SHIT','SH1T','SHT','SHYT',
+  'ASS','AZZ','ARSE',
+  'CUNT','CVNT','KNT',
+  'DICK','DIK','DYCK','D1CK',
+  'COCK','COK','C0CK',
+  'BITCH','B1TCH','BYTCH','BIATCH',
+  'PUSSY','PU55Y','PUSS',
+  'NIGGA','NIGGER','N1GGA','N1GGER',
+  'FAGGOT','FAGOT','FAG','FAGT',
+  'RETARD','RETRD',
+  'WHORE','HOR','SLUT','SLT',
+  'PRICK','PRCK',
+  'BASTARD','BSTRD',
+  'DAMN','CRAP',
+  'NAZI','NAZI',
+  'RAPE','RAPIST',
+  'KILL','HITLER','JIHAD',
+  'PENIS','VAGINA','BOOB','TITS','TIT',
+  'CUMSHOT','CUM','JIZZ',
+  'MASTURBAT','HANDJOB','BLOWJOB',
+  'NWORD','KIKE','SPIC','CHINK','WETBACK',
+];
+
+function normalizeCallsign(s) {
+  return s.toUpperCase()
+    .replace(/[4@]/g,'A').replace(/3/g,'E').replace(/[1!|]/g,'I')
+    .replace(/0/g,'O').replace(/[$5]/g,'S').replace(/7/g,'T')
+    .replace(/8/g,'B').replace(/[^A-Z]/g,'');
+}
+
+function callsignIsBad(raw) {
+  const n = normalizeCallsign(raw);
+  return BAD_WORDS.some(w => n.includes(w));
+}
+
 // ── Pool state (fetched from Supabase) ───────────────────────────
 let poolSize = 100;  // default, overridden by Supabase fetch
 let currentOdds = 100;
@@ -2598,6 +2636,12 @@ async function promptNicknameAndNumber(sc, showCombo) {
 
     btn.onclick = async () => {
       const nick = (input.value.trim() || 'ANON').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0, 8) || 'ANON';
+      if (callsignIsBad(nick)) {
+        input.value = '';
+        input.placeholder = 'CHOOSE ANOTHER';
+        input.focus();
+        return;
+      }
       btn.textContent = 'SAVING...';
       btn.disabled = true;
 
