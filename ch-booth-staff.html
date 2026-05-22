@@ -556,15 +556,29 @@ const db = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   },
 });
 
+function bounceToLogin(msg) {
+  showStatus(msg, true);
+  db.auth.signOut().catch(() => {});
+  document.getElementById('admin-screen').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+}
+
 async function requireSession() {
-  const { data: { session } } = await db.auth.getSession();
-  if (!session?.user) {
-    showStatus('Session expired. Please log in again.', true);
-    document.getElementById('admin-screen').style.display = 'none';
-    document.getElementById('login-screen').style.display = 'flex';
+  const { data: { session: cur } } = await db.auth.getSession();
+  if (!cur?.refresh_token) {
+    bounceToLogin('Session expired. Please log in again.');
     return null;
   }
-  return session;
+  const expSec = cur.expires_at ?? 0;
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (cur.access_token && expSec - nowSec > 60) return cur;
+
+  const { data: { session: refreshed }, error } = await db.auth.refreshSession();
+  if (error || !refreshed?.access_token) {
+    bounceToLogin('Could not refresh session: ' + (error?.message || 'unknown'));
+    return null;
+  }
+  return refreshed;
 }
 
 // ── Auth ──────────────────────────────────────────────────────────
