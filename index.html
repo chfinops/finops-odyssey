@@ -627,6 +627,7 @@
       <div class="how-to-row win"><span class="ico">🏆</span><span class="lbl">WIN</span><span class="txt">Land with budget left = bonus + prize</span></div>
     </div>
     <button class="pixel-btn" id="start-btn">LAUNCH MISSION</button>
+    <button class="pixel-btn secondary" id="skip-btn" style="font-size:6px;opacity:0.8">SKIP — JUST GET MY COMBO</button>
     <div class="controls-hint">
       TAP CONTROLS · OR USE ← → SPACE<br>
       DODGE WASTE · COLLECT COINS · ANSWER FINOPS<br>
@@ -2523,13 +2524,14 @@ async function allocateCombinationNumber() {
 }
 
 // ── Leaderboard ──────────────────────────────────────────────────
-async function saveScore(nick, sc, ph, eff) {
+async function saveScore(nick, sc, ph, eff, combo = null) {
   if (!db) return;
   try {
     await db.from('scores').insert({
       nickname: nick, score: sc,
       phase_reached: ph, efficiency: eff,
-      removed: false
+      removed: false,
+      ...(combo && { combination: combo })
     });
   } catch(e) { console.warn('Score save failed:', e); }
 }
@@ -2645,11 +2647,11 @@ async function promptNicknameAndNumber(sc, showCombo) {
       btn.textContent = 'SAVING...';
       btn.disabled = true;
 
-      await saveScore(nick, sc, finalPhase, finalEff);
+      // Allocate combo first so it can be stored in the score row (1 INSERT, no UPDATE)
+      const combo = await allocateCombinationNumber();
+      await saveScore(nick, sc, finalPhase, finalEff, combo);
 
       if (showCombo) {
-        // Allocate combination number for won games
-        const combo = await allocateCombinationNumber();
         const lb = await fetchLeaderboard();
         sect.innerHTML = `
           ${renderLeaderboard(lb, nick)}
@@ -2778,6 +2780,20 @@ canvas.addEventListener('touchend', endCanvasTouch, { passive: false });
 canvas.addEventListener('touchcancel', endCanvasTouch, { passive: false });
 
 document.getElementById('start-btn').addEventListener('click', restartGame);
+
+function skipToCombo() {
+  overlayShown = true;
+  const o = document.getElementById('overlay');
+  o.innerHTML = `
+    <h2 style="font-family:'Press Start 2P',monospace;font-size:14px;color:var(--cyan);text-align:center;line-height:1.6">
+      SKIP MISSION<br>
+      <span style="font-size:8px;color:rgba(200,216,232,0.7)">GET YOUR COMBO NUMBER</span>
+    </h2>
+    <div id="nick-section"></div>
+  `;
+  promptNicknameAndNumber(0, true);
+}
+document.getElementById('skip-btn').addEventListener('click', skipToCombo);
 
 // ── Boot ──────────────────────────────────────────────────────────
 async function boot() {

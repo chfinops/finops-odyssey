@@ -514,6 +514,7 @@
               <th>SCORE</th>
               <th>PHASE</th>
               <th>EFFICIENCY</th>
+              <th>COMBO</th>
               <th>TIME</th>
               <th>ACTION</th>
             </tr>
@@ -672,14 +673,14 @@ async function doReset() {
 async function loadLeaderboard() {
   const { data, error } = await db
     .from('scores')
-    .select('id, nickname, score, phase_reached, efficiency, created_at, removed')
+    .select('id, nickname, score, phase_reached, efficiency, combination, created_at, removed')
     .eq('removed', false)
     .order('score', { ascending: false })
     .limit(50);
 
   const tbody = document.getElementById('lb-tbody');
   if (error || !data?.length) {
-    tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No scores yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No scores yet.</td></tr>';
     return;
   }
 
@@ -690,9 +691,10 @@ async function loadLeaderboard() {
       <td><span class="score-val">${row.score.toLocaleString()}</span></td>
       <td>${row.phase_reached || '—'}/3</td>
       <td>${row.efficiency || '—'}%</td>
+      <td style="font-family:monospace;font-weight:700;letter-spacing:2px;color:var(--gold)">${row.combination || '—'}</td>
       <td class="ts-val">${formatTime(row.created_at)}</td>
       <td>
-        <button class="btn-remove" onclick="removeScore('${row.id}', '${escHtml(row.nickname)}')">
+        <button class="btn-remove" onclick="removeScore('${row.id}', '${escHtml(row.nickname)}', '${row.combination || ''}')">
           REMOVE
         </button>
       </td>
@@ -700,10 +702,11 @@ async function loadLeaderboard() {
   `).join('');
 }
 
-async function removeScore(id, nick) {
+async function removeScore(id, nick, combo = '') {
   if (!confirm(`Remove "${nick}" from the leaderboard?`)) return;
   const { error } = await db.from('scores').update({ removed: true }).eq('id', id);
   if (error) { showStatus('Remove failed: ' + error.message, true); return; }
+  if (combo) await db.from('allocations').delete().eq('combination', combo);
   showStatus(`"${nick}" removed from leaderboard.`);
   loadLeaderboard();
 }
