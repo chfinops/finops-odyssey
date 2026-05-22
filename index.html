@@ -460,6 +460,11 @@
     text-transform: uppercase;
   }
   .nick-input:focus { outline: none; border-color: var(--gold); }
+  .nick-input::placeholder {
+    font-size: 6px;
+    letter-spacing: 0.5px;
+    color: rgba(200,216,232,0.6);
+  }
   
 .nick-input, #submit-nick {
     box-sizing: border-box !important; /* Prevents padding from breaking width */
@@ -627,6 +632,7 @@
       <div class="how-to-row win"><span class="ico">🏆</span><span class="lbl">WIN</span><span class="txt">Land with budget left = bonus + prize</span></div>
     </div>
     <button class="pixel-btn" id="start-btn">LAUNCH MISSION</button>
+    <button class="pixel-btn secondary" id="skip-btn" style="font-size:6px;opacity:0.8">SKIP — JUST GET MY COMBO</button>
     <div class="controls-hint">
       TAP CONTROLS · OR USE ← → SPACE<br>
       DODGE WASTE · COLLECT COINS · ANSWER FINOPS<br>
@@ -1138,7 +1144,14 @@ function pickGameQuestions() {
     OPTIMIZE: FINOPS_EVENT_POOL.filter(q => q.pillar === 'OPTIMIZE'),
     OPERATE: FINOPS_EVENT_POOL.filter(q => q.pillar === 'OPERATE'),
   };
-  const shuffle = arr => [...arr].sort(() => Math.random() - 0.5);
+  const shuffle = arr => {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  };
 
   const pickFromPillar = (pillar, count, mustIncludeAI = false) => {
     const pool = byPillar[pillar];
@@ -1888,7 +1901,12 @@ function startQuestionAsteroids() {
   questionDisplay.classList.add('show');
 
   // Create 3 large answer asteroids coming from the top
-  const shuffled = [...currentQuestion.options].sort(() => Math.random() - 0.5);
+  const opts = [...currentQuestion.options];
+  for (let i = opts.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [opts[i], opts[j]] = [opts[j], opts[i]];
+  }
+  const shuffled = opts;
   const spacing = W / 4;
   const startX = spacing;
   
@@ -2440,6 +2458,44 @@ try {
   db = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 } catch(e) { console.warn('Supabase not loaded, running in local mode'); }
 
+// ── Callsign profanity filter ─────────────────────────────────────
+const BAD_WORDS = [
+  'FUCK','FUCK','FUK','FUCC','FCK','FVCK','FU CK',
+  'SHIT','SH1T','SHT','SHYT',
+  'ASS','AZZ','ARSE',
+  'CUNT','CVNT','KNT',
+  'DICK','DIK','DYCK','D1CK',
+  'COCK','COK','C0CK',
+  'BITCH','B1TCH','BYTCH','BIATCH',
+  'PUSSY','PU55Y','PUSS',
+  'NIGGA','NIGGER','N1GGA','N1GGER',
+  'FAGGOT','FAGOT','FAG','FAGT',
+  'RETARD','RETRD',
+  'WHORE','HOR','SLUT','SLT',
+  'PRICK','PRCK',
+  'BASTARD','BSTRD',
+  'DAMN','CRAP',
+  'NAZI','NAZI',
+  'RAPE','RAPIST',
+  'KILL','HITLER','JIHAD',
+  'PENIS','VAGINA','BOOB','TITS','TIT',
+  'CUMSHOT','CUM','JIZZ',
+  'MASTURBAT','HANDJOB','BLOWJOB',
+  'NWORD','KIKE','SPIC','CHINK','WETBACK',
+];
+
+function normalizeCallsign(s) {
+  return s.toUpperCase()
+    .replace(/[4@]/g,'A').replace(/3/g,'E').replace(/[1!|]/g,'I')
+    .replace(/0/g,'O').replace(/[$5]/g,'S').replace(/7/g,'T')
+    .replace(/8/g,'B').replace(/[^A-Z]/g,'');
+}
+
+function callsignIsBad(raw) {
+  const n = normalizeCallsign(raw);
+  return BAD_WORDS.some(w => n.includes(w));
+}
+
 // ── Pool state (fetched from Supabase) ───────────────────────────
 let poolSize = 100;  // default, overridden by Supabase fetch
 let currentOdds = 100;
@@ -2485,13 +2541,14 @@ async function allocateCombinationNumber() {
 }
 
 // ── Leaderboard ──────────────────────────────────────────────────
-async function saveScore(nick, sc, ph, eff) {
+async function saveScore(nick, sc, ph, eff, combo = null) {
   if (!db) return;
   try {
     await db.from('scores').insert({
       nickname: nick, score: sc,
       phase_reached: ph, efficiency: eff,
-      removed: false
+      removed: false,
+      ...(combo && { combination: combo })
     });
   } catch(e) { console.warn('Score save failed:', e); }
 }
@@ -2551,7 +2608,7 @@ function showOverlay(type) {
       <button class="pixel-btn secondary" onclick="restartGame()">RETRY MISSION</button>
     `;
     o.style.display = 'flex';
-    promptNicknameAndNumber(score, false);
+    promptNicknameAndNumber(score, true);
   } else if (type === 'won') {
     o.innerHTML = `
       <h1 style="background:linear-gradient(180deg,#39FF14,#0B7C0F);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">UNDER<br>BUDGET!</h1>
@@ -2584,7 +2641,7 @@ async function promptNicknameAndNumber(sc, showCombo) {
     <div style="font-size:7px; color:var(--cyan); text-align:center; margin-bottom:6px">
       ENTER CALLSIGN FOR LEADERBOARD
     </div>
-    <input class="nick-input" id="nick-input" maxlength="8" placeholder="CALLSIGN" />
+    <input class="nick-input" id="nick-input" maxlength="8" placeholder="NO EMAIL OR REAL NAMES - ALIAS ONLY" />
     <button class="pixel-btn" id="submit-nick" style="margin-top:12px; width:100%; max-width:200px;">
       SUBMIT SCORE
     </button>
@@ -2598,14 +2655,37 @@ async function promptNicknameAndNumber(sc, showCombo) {
 
     btn.onclick = async () => {
       const nick = (input.value.trim() || 'ANON').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0, 8) || 'ANON';
-      btn.textContent = 'SAVING...';
+      if (callsignIsBad(nick)) {
+        input.value = '';
+        input.placeholder = 'CHOOSE ANOTHER';
+        input.focus();
+        return;
+      }
+      btn.textContent = 'CHECKING...';
       btn.disabled = true;
 
-      await saveScore(nick, sc, finalPhase, finalEff);
+      if (db) {
+        const { count } = await db.from('scores')
+          .select('id', { count: 'exact', head: true })
+          .eq('nickname', nick)
+          .eq('removed', false);
+        if (count > 0) {
+          input.value = '';
+          input.placeholder = 'NAME TAKEN — TRY ANOTHER';
+          input.focus();
+          btn.textContent = 'SUBMIT SCORE';
+          btn.disabled = false;
+          return;
+        }
+      }
+
+      btn.textContent = 'SAVING...';
+
+      // Allocate combo first so it can be stored in the score row (1 INSERT, no UPDATE)
+      const combo = await allocateCombinationNumber();
+      await saveScore(nick, sc, finalPhase, finalEff, combo);
 
       if (showCombo) {
-        // Allocate combination number for won games
-        const combo = await allocateCombinationNumber();
         const lb = await fetchLeaderboard();
         sect.innerHTML = `
           ${renderLeaderboard(lb, nick)}
@@ -2687,6 +2767,21 @@ setupTouch('right-btn', 'right');
 setupTouch('fire-btn', 'fire');
 
 document.getElementById('start-btn').addEventListener('click', restartGame);
+
+function skipToCombo() {
+  efficiency = 0;
+  overlayShown = true;
+  const o = document.getElementById('overlay');
+  o.innerHTML = `
+    <h2 style="font-family:'Press Start 2P',monospace;font-size:14px;color:var(--cyan);text-align:center;line-height:1.6">
+      SKIP MISSION<br>
+      <span style="font-size:8px;color:rgba(200,216,232,0.7)">GET YOUR COMBO NUMBER</span>
+    </h2>
+    <div id="nick-section"></div>
+  `;
+  promptNicknameAndNumber(0, true);
+}
+document.getElementById('skip-btn').addEventListener('click', skipToCombo);
 
 // ── Boot ──────────────────────────────────────────────────────────
 async function boot() {
