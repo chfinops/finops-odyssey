@@ -703,8 +703,11 @@ async function doReset() {
   showStatus('Generating new pool...');
 
   const all = Array.from({length: 999}, (_, i) => i + 1);
-  const shuffled = all.sort(() => Math.random() - 0.5);
-  const pool = shuffled.slice(0, size);
+  for (let i = all.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [all[i], all[j]] = [all[j], all[i]];
+  }
+  const pool = all.slice(0, size);
 
   const delRes = await adminFetch(
     `/rest/v1/allocations?id=neq.00000000-0000-0000-0000-000000000000`,

@@ -1144,7 +1144,14 @@ function pickGameQuestions() {
     OPTIMIZE: FINOPS_EVENT_POOL.filter(q => q.pillar === 'OPTIMIZE'),
     OPERATE: FINOPS_EVENT_POOL.filter(q => q.pillar === 'OPERATE'),
   };
-  const shuffle = arr => [...arr].sort(() => Math.random() - 0.5);
+  const shuffle = arr => {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  };
 
   const pickFromPillar = (pillar, count, mustIncludeAI = false) => {
     const pool = byPillar[pillar];
@@ -1894,7 +1901,12 @@ function startQuestionAsteroids() {
   questionDisplay.classList.add('show');
 
   // Create 3 large answer asteroids coming from the top
-  const shuffled = [...currentQuestion.options].sort(() => Math.random() - 0.5);
+  const opts = [...currentQuestion.options];
+  for (let i = opts.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [opts[i], opts[j]] = [opts[j], opts[i]];
+  }
+  const shuffled = opts;
   const spacing = W / 4;
   const startX = spacing;
   
