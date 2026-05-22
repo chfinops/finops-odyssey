@@ -533,7 +533,7 @@
 <div class="confirm-modal" id="confirm-modal">
   <div class="confirm-box">
     <h3>⚠ CONFIRM RESET</h3>
-    <p>This will clear ALL number allocations and generate a new pool of <strong id="confirm-size">—</strong> numbers.<br><br>All previous combinations are invalidated. Any player holding an old number will not be able to win.</p>
+    <p>This will clear ALL number allocations, generate a new pool of <strong id="confirm-size">—</strong> numbers, and <strong>remove all combo codes from existing scores</strong>.<br><br>Any player holding an old combination number will not be able to win.</p>
     <div class="confirm-btns">
       <button class="btn btn-danger" style="flex:1" onclick="doReset()">YES, RESET</button>
       <button class="btn btn-secondary" style="flex:1" onclick="closeConfirm()">CANCEL</button>
@@ -722,7 +722,17 @@ async function doReset() {
   });
   if (!upRes.ok) { showStatus(`Failed to save pool (${upRes.status}): ${upRes.error}`, true); return; }
 
-  showStatus(`Pool reset! New size: ${size}. ${size} numbers generated. Lock can now be set.`);
+  const clearRes = await adminFetch('/rest/v1/scores?removed=eq.false', {
+    method: 'PATCH',
+    body: JSON.stringify({ combination: null }),
+  });
+  if (!clearRes.ok) {
+    showStatus(`Pool saved but failed to clear old combos (${clearRes.status}): ${clearRes.error}`, true);
+    await loadPoolConfig();
+    return;
+  }
+
+  showStatus(`Pool reset! ${size} new numbers generated. All previous combo codes cleared.`);
   await loadPoolConfig();
 }
 
