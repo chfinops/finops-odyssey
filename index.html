@@ -2757,6 +2757,7 @@ setupTouch('fire-btn', 'fire');
 document.getElementById('start-btn').addEventListener('click', restartGame);
 
 function skipToCombo() {
+  efficiency = 0;
   overlayShown = true;
   const o = document.getElementById('overlay');
   o.innerHTML = `
