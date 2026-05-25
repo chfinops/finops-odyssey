@@ -1907,8 +1907,10 @@ function startQuestionAsteroids() {
     [opts[i], opts[j]] = [opts[j], opts[i]];
   }
   const shuffled = opts;
-  const spacing = W / 4;
-  const startX = spacing;
+  // Simple, closer spacing - just enough to avoid overlap
+  const spacing = W / 3.5; // Closer than W/4 but not too close
+  const totalWidth = (shuffled.length - 1) * spacing; // Total width of all asteroids
+  const startX = (W - totalWidth) / 2; // Center the group on screen
   
   shuffled.forEach((opt, index) => {
     const x = startX + (index * spacing);
