@@ -301,10 +301,10 @@
     top: 20px;
     left: 50%;
     transform: translateX(-50%);
-    background: rgba(2,4,9,0.9);
+    background: rgba(2,4,9,0.95);
     border: 2px solid var(--cyan);
     padding: 8px 12px;
-    max-width: 90%;
+    max-width: 98%;
     z-index: 30;
     display: none;
     text-align: center;
@@ -319,24 +319,36 @@
 
   .question-title {
     font-family: 'Orbitron', sans-serif;
-    font-size: 8px;
+    font-size: 11px;
     font-weight: 900;
     color: var(--nasa-red);
-    letter-spacing: 1px;
+    letter-spacing: 1.5px;
     margin-bottom: 4px;
   }
 
   .question-desc {
-    font-size: 6px;
-    color: var(--star);
-    line-height: 1.4;
+    font-size: 11px;
+    color: #fff;
+    line-height: 1.5;
     margin-bottom: 6px;
+    text-shadow: 0 0 4px rgba(0,0,0,0.9);
   }
 
   .question-instruction {
-    font-size: 5px;
+    font-size: 8px;
     color: var(--cyan);
     letter-spacing: 1px;
+  }
+
+  @media (max-width: 600px) {
+    #question-display {
+      padding: 12px 16px;
+      max-width: 98%;
+      background: rgba(2,4,9,0.96);
+    }
+    .question-title       { font-size: 14px; }
+    .question-desc        { font-size: 14px; }
+    .question-instruction { font-size: 10px; }
   }
 
   .event-icon {
@@ -2647,6 +2659,9 @@ async function promptNicknameAndNumber(sc, showCombo) {
     <button class="pixel-btn" id="submit-nick" style="margin-top:12px; width:100%; max-width:200px;">
       SUBMIT SCORE
     </button>
+    <button class="pixel-btn secondary" style="margin-top:8px; width:100%; max-width:200px;" onclick="restartGame()">
+      FLY AGAIN
+    </button>
   </div>
 `;
   setTimeout(() => {
@@ -2704,6 +2719,7 @@ async function promptNicknameAndNumber(sc, showCombo) {
               CHANCE OF WINNING: 1 IN ${finalOdds}
             </div>
           </div>
+          <button class="pixel-btn secondary" style="margin-top:14px;width:100%;max-width:200px" onclick="restartGame()">FLY AGAIN</button>
         `;
       } else {
         const lb = await fetchLeaderboard();
