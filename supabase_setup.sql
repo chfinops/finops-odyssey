@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS scores (
   score         integer NOT NULL DEFAULT 0,
   phase_reached integer DEFAULT 1,
   efficiency    integer DEFAULT 0,
+  combination   text,                    -- combo code handed to player
   removed       boolean DEFAULT false,   -- admin soft-delete
   created_at    timestamptz DEFAULT now()
 );
@@ -69,6 +70,14 @@ CREATE POLICY "public leaderboard read"
   ON scores FOR SELECT
   USING (removed = false);
 
+-- scores: authenticated staff can read all rows (incl. removed) — needed
+-- for the RETURNING clause after admin soft-delete (otherwise the post-update
+-- row fails the public SELECT policy and the UPDATE errors with 42501).
+CREATE POLICY "admin select all scores"
+  ON scores FOR SELECT
+  TO authenticated
+  USING (true);
+
 -- scores: anyone can insert (no login to play)
 CREATE POLICY "public score insert"
   ON scores FOR INSERT
@@ -77,8 +86,9 @@ CREATE POLICY "public score insert"
 -- scores: only authenticated staff can soft-delete (update removed=true)
 CREATE POLICY "admin remove score"
   ON scores FOR UPDATE
-  USING (auth.role() = 'authenticated')
-  WITH CHECK (auth.role() = 'authenticated');
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
 
 -- pool_config: public read (game needs pool_size for odds display)
 CREATE POLICY "public pool read"
@@ -88,7 +98,8 @@ CREATE POLICY "public pool read"
 -- pool_config: only authenticated staff can update/reset
 CREATE POLICY "admin pool update"
   ON pool_config FOR UPDATE
-  USING (auth.role() = 'authenticated');
+  TO authenticated
+  USING (true);
 
 -- allocations: public insert (game allocates on game end)
 CREATE POLICY "public allocation insert"
@@ -98,16 +109,18 @@ CREATE POLICY "public allocation insert"
 -- allocations: authenticated staff can read (admin portal pool view)
 CREATE POLICY "admin allocation read"
   ON allocations FOR SELECT
-  USING (auth.role() = 'authenticated');
+  TO authenticated
+  USING (true);
 
 -- allocations: authenticated staff can delete (during pool reset)
 CREATE POLICY "admin allocation delete"
   ON allocations FOR DELETE
-  USING (auth.role() = 'authenticated');
+  TO authenticated
+  USING (true);
 
 -- ── 5. Done ──────────────────────────────────────────────────────
 -- Next steps:
 --   1. Go to Authentication → Users → Invite staff emails
---   2. Copy Project URL + anon key from Settings → API
---   3. Paste into index.html and admin.html (SUPABASE_URL / SUPABASE_ANON_KEY)
---   4. Deploy index.html + admin.html to Vercel
+--   2. Copy Project URL + publishable key from Settings → API
+--   3. Paste into index.html and ch-booth-staff.html (SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY)
+--   4. Deploy to Vercel

@@ -299,12 +299,13 @@
   #question-display {
     position: absolute;
     top: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(2,4,9,0.9);
+    left: 0;
+    right: 0;
+    background: rgba(2,4,9,0.95);
     border: 2px solid var(--cyan);
     padding: 8px 12px;
-    max-width: 90%;
+    max-height: 38vh;
+    overflow-y: auto;
     z-index: 30;
     display: none;
     text-align: center;
@@ -319,24 +320,37 @@
 
   .question-title {
     font-family: 'Orbitron', sans-serif;
-    font-size: 8px;
+    font-size: 9px;
     font-weight: 900;
     color: var(--nasa-red);
-    letter-spacing: 1px;
+    letter-spacing: 1.5px;
     margin-bottom: 4px;
   }
 
   .question-desc {
-    font-size: 6px;
-    color: var(--star);
-    line-height: 1.4;
+    font-size: 9px;
+    color: #fff;
+    line-height: 1.5;
     margin-bottom: 6px;
+    text-shadow: 0 0 4px rgba(0,0,0,0.9);
   }
 
   .question-instruction {
-    font-size: 5px;
+    font-size: 7px;
     color: var(--cyan);
     letter-spacing: 1px;
+  }
+
+  @media (max-width: 600px) {
+    #question-display {
+      padding: 6px 10px;
+      max-height: 26vh;
+      background: rgba(2,4,9,0.96);
+    }
+    .question-icon        { display: none; }
+    .question-title       { font-size: 8px; letter-spacing: 1px; margin-bottom: 3px; }
+    .question-desc        { font-size: 8px; line-height: 1.3; margin-bottom: 4px; }
+    .question-instruction { font-size: 7px; }
   }
 
   .event-icon {
@@ -460,6 +474,11 @@
     text-transform: uppercase;
   }
   .nick-input:focus { outline: none; border-color: var(--gold); }
+  .nick-input::placeholder {
+    font-size: 6px;
+    letter-spacing: 0.5px;
+    color: rgba(200,216,232,0.6);
+  }
   
 .nick-input, #submit-nick {
     box-sizing: border-box !important; /* Prevents padding from breaking width */
@@ -1139,7 +1158,14 @@ function pickGameQuestions() {
     OPTIMIZE: FINOPS_EVENT_POOL.filter(q => q.pillar === 'OPTIMIZE'),
     OPERATE: FINOPS_EVENT_POOL.filter(q => q.pillar === 'OPERATE'),
   };
-  const shuffle = arr => [...arr].sort(() => Math.random() - 0.5);
+  const shuffle = arr => {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  };
 
   const pickFromPillar = (pillar, count, mustIncludeAI = false) => {
     const pool = byPillar[pillar];
@@ -1622,7 +1648,7 @@ function drawAnswerAsteroid(a) {
   const textAreaHeight = a.size - 20;
   
   // Start with larger font and scale down if needed
-  let fontSize = 8;
+  let fontSize = 10;
   let lines = [];
   let lineHeight = 0;
   
@@ -1649,7 +1675,7 @@ function drawAnswerAsteroid(a) {
   }
   
   // Try different font sizes to find the best fit
-  for (let testSize = 12; testSize >= 6; testSize--) {
+  for (let testSize = 16; testSize >= 8; testSize--) {
     const font = `${testSize}px Arial, sans-serif`;
     const testLines = wrapText(a.answerText, textAreaWidth, font);
     const testLineHeight = testSize + 3;
@@ -1889,9 +1915,16 @@ function startQuestionAsteroids() {
   questionDisplay.classList.add('show');
 
   // Create 3 large answer asteroids coming from the top
-  const shuffled = [...currentQuestion.options].sort(() => Math.random() - 0.5);
-  const spacing = W / 4;
-  const startX = spacing;
+  const opts = [...currentQuestion.options];
+  for (let i = opts.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [opts[i], opts[j]] = [opts[j], opts[i]];
+  }
+  const shuffled = opts;
+  // Simple, closer spacing - just enough to avoid overlap
+  const spacing = W / 3.5; // Closer than W/4 but not too close
+  const totalWidth = (shuffled.length - 1) * spacing; // Total width of all asteroids
+  const startX = (W - totalWidth) / 2; // Center the group on screen
   
   shuffled.forEach((opt, index) => {
     const x = startX + (index * spacing);
@@ -2595,7 +2628,7 @@ function showOverlay(type) {
   } else if (type === 'won') {
     o.innerHTML = `
       <h1 style="background:linear-gradient(180deg,#39FF14,#0B7C0F);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">UNDER<br>BUDGET!</h1>
-      <h2 style="color:var(--green)">★ ARTEMIS LANDED ★</h2>
+      <h2 style="color:var(--green)">★ ROCKET LANDED ★</h2>
       <div class="brief">
         SAVINGS BANK: $${budget | 0}K<br>
         ACCURACY BONUS: ${bulletsShot > 0 ? Math.round((bulletsHit / bulletsShot) * 100) : 0}%<br>
@@ -2610,7 +2643,7 @@ function showOverlay(type) {
   }
 }
 
-async function promptNicknameAndNumber(sc, showCombo) {
+async function promptNicknameAndNumber(sc, showCombo, isSkip = false) {
   const sect = document.getElementById('nick-section');
   if (!sect) return;
 
@@ -2624,10 +2657,11 @@ async function promptNicknameAndNumber(sc, showCombo) {
     <div style="font-size:7px; color:var(--cyan); text-align:center; margin-bottom:6px">
       ENTER CALLSIGN FOR LEADERBOARD
     </div>
-    <input class="nick-input" id="nick-input" maxlength="8" placeholder="CALLSIGN" />
+    <input class="nick-input" id="nick-input" maxlength="8" placeholder="NO EMAIL OR REAL NAMES - ALIAS ONLY" />
     <button class="pixel-btn" id="submit-nick" style="margin-top:12px; width:100%; max-width:200px;">
       SUBMIT SCORE
     </button>
+    ${isSkip ? `<button class="pixel-btn secondary" style="margin-top:8px; width:100%; max-width:200px;" onclick="restartGame()">FLY AGAIN</button>` : ''}
   </div>
 `;
   setTimeout(() => {
@@ -2644,8 +2678,25 @@ async function promptNicknameAndNumber(sc, showCombo) {
         input.focus();
         return;
       }
-      btn.textContent = 'SAVING...';
+      btn.textContent = 'CHECKING...';
       btn.disabled = true;
+
+      if (db) {
+        const { count } = await db.from('scores')
+          .select('id', { count: 'exact', head: true })
+          .eq('nickname', nick)
+          .eq('removed', false);
+        if (count > 0) {
+          input.value = '';
+          input.placeholder = 'NAME TAKEN — TRY ANOTHER';
+          input.focus();
+          btn.textContent = 'SUBMIT SCORE';
+          btn.disabled = false;
+          return;
+        }
+      }
+
+      btn.textContent = 'SAVING...';
 
       // Allocate combo first so it can be stored in the score row (1 INSERT, no UPDATE)
       const combo = await allocateCombinationNumber();
@@ -2668,6 +2719,7 @@ async function promptNicknameAndNumber(sc, showCombo) {
               CHANCE OF WINNING: 1 IN ${finalOdds}
             </div>
           </div>
+          ${isSkip ? `<button class="pixel-btn secondary" style="margin-top:14px;width:100%;max-width:200px" onclick="restartGame()">FLY AGAIN</button>` : ''}
         `;
       } else {
         const lb = await fetchLeaderboard();
@@ -2782,6 +2834,7 @@ canvas.addEventListener('touchcancel', endCanvasTouch, { passive: false });
 document.getElementById('start-btn').addEventListener('click', restartGame);
 
 function skipToCombo() {
+  efficiency = 0;
   overlayShown = true;
   const o = document.getElementById('overlay');
   o.innerHTML = `
@@ -2791,7 +2844,7 @@ function skipToCombo() {
     </h2>
     <div id="nick-section"></div>
   `;
-  promptNicknameAndNumber(0, true);
+  promptNicknameAndNumber(0, true, true);
 }
 document.getElementById('skip-btn').addEventListener('click', skipToCombo);
 
