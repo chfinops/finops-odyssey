@@ -299,12 +299,11 @@
   #question-display {
     position: absolute;
     top: 20px;
-    left: 50%;
-    transform: translateX(-50%);
+    left: 0;
+    right: 0;
     background: rgba(2,4,9,0.95);
     border: 2px solid var(--cyan);
     padding: 8px 12px;
-    max-width: 98%;
     max-height: 38vh;
     overflow-y: auto;
     z-index: 30;
@@ -345,7 +344,6 @@
   @media (max-width: 600px) {
     #question-display {
       padding: 6px 10px;
-      max-width: 100%;
       max-height: 26vh;
       background: rgba(2,4,9,0.96);
     }
