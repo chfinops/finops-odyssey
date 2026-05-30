@@ -479,11 +479,10 @@
       <div class="reset-form">
         <label>New pool size (how many unique numbers to offer, 1–999)</label>
         <input type="number" id="new-pool-size" min="1" max="999" placeholder="e.g. 50" />
-        <div class="reset-warning">
-          ⚠ RESET clears ALL allocations and regenerates the number pool.<br>
-          Pool size can ONLY be changed during reset.<br>
-          This cannot be undone.
-        </div>
+       <div class="reset-warning">
+        ⚠ Growing the pool size preserves existing allocations. <br>
+        Shrinking or resetting completely requires a full wipe.
+      </div>
         <button class="btn btn-danger" onclick="confirmReset()">RESET POOL + SET SIZE</button>
       </div>
     </div>
@@ -700,32 +699,96 @@ async function doReset() {
   closeConfirm();
   if (!size) return;
 
-  showStatus('Generating new pool...');
-
-  const all = Array.from({length: 999}, (_, i) => i + 1);
-  for (let i = all.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [all[i], all[j]] = [all[j], all[i]];
+  showStatus('Checking existing pool configuration...');
+  
+  // 1. Fetch current pool configuration to see if we are expanding
+  const { data: currentCfg, error: cfgError } = await db.from('pool_config').select('*').single();
+  if (cfgError) {
+    showStatus(`Failed to fetch current config: ${cfgError.message}`, true);
+    return;
   }
-  const pool = all.slice(0, size);
 
-  const delRes = await adminFetch(
-    `/rest/v1/allocations?id=neq.00000000-0000-0000-0000-000000000000`,
-    { method: 'DELETE' }
-  );
-  if (!delRes.ok) { showStatus(`Failed to clear allocations (${delRes.status}): ${delRes.error}`, true); return; }
+  const currentNumbers = currentCfg?.pool_numbers || [];
+  const isExpanding = size > currentNumbers.length;
 
-  const upRes = await adminFetch(`/rest/v1/pool_config?id=eq.1`, {
-    method: 'PATCH',
-    body: JSON.stringify({
-      pool_size: size,
-      pool_numbers: pool,
-      updated_at: new Date().toISOString(),
-    }),
-  });
-  if (!upRes.ok) { showStatus(`Failed to save pool (${upRes.status}): ${upRes.error}`, true); return; }
+  if (isExpanding) {
+    showStatus(`Expanding pool from ${currentNumbers.length} to ${size}...`);
+    
+    // Create a pool of all possible numbers (1-999) excluding what we already have
+    const existingSet = new Set(currentNumbers);
+    const availableNumbers = [];
+    for (let i = 1; i <= 999; i++) {
+      if (!existingSet.has(i)) {
+        availableNumbers.push(i);
+      }
+    }
 
-  showStatus(`Pool reset! New size: ${size}. ${size} numbers generated. Lock can now be set.`);
+    // Shuffle only the available remaining numbers using Fisher-Yates
+    for (let i = availableNumbers.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [availableNumbers[i], availableNumbers[j]] = [availableNumbers[j], availableNumbers[i]];
+    }
+
+    // Take just enough numbers to reach the new target size
+    const numbersNeeded = size - currentNumbers.length;
+    const additionalNumbers = availableNumbers.slice(0, numbersNeeded);
+    
+    // Combine old numbers with new numbers
+    const newPool = [...currentNumbers, ...additionalNumbers];
+
+    // Update pool_config WITHOUT deleting allocations
+    const upRes = await adminFetch(`/rest/v1/pool_config?id=eq.1`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        pool_size: size,
+        pool_numbers: newPool,
+        updated_at: new Date().toISOString(),
+      }),
+    });
+
+    if (!upRes.ok) {
+      showStatus(`Failed to expand pool (${upRes.status}): ${upRes.error}`, true);
+      return;
+    }
+
+    showStatus(`Pool expanded! Added ${numbersNeeded} new numbers. Total size: ${size}. Existing allocations preserved.`);
+
+  } else {
+    // 2. Destructive Path: If shrinking or same size, do a complete clean wipe
+    showStatus('Performing clean pool reset...');
+    
+    const all = Array.from({length: 999}, (_, i) => i + 1);
+    for (let i = all.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [all[i], all[j]] = [all[j], all[i]];
+    }
+    const pool = all.slice(0, size);
+
+    // Wipe allocations completely
+    const delRes = await adminFetch(`/rest/v1/allocations?id=neq.00000000-0000-0000-0000-000000000000`, { method: 'DELETE' });
+    if (!delRes.ok) {
+      showStatus(`Failed to clear allocations (${delRes.status}): ${delRes.error}`, true);
+      return;
+    }
+
+    // Save completely new pool
+    const upRes = await adminFetch(`/rest/v1/pool_config?id=eq.1`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        pool_size: size,
+        pool_numbers: pool,
+        updated_at: new Date().toISOString(),
+      }),
+    });
+
+    if (!upRes.ok) {
+      showStatus(`Failed to save pool (${upRes.status}): ${upRes.error}`, true);
+      return;
+    }
+
+    showStatus(`Pool completely reset! New size: ${size}. Previous allocations cleared.`);
+  }
+
   await loadPoolConfig();
 }
 
