@@ -260,10 +260,11 @@
   }
 
   .reset-warning {
-    font-size: 10px;
-    color: var(--nasa-red);
-    line-height: 1.6;
-  }
+  font-size: 13px;          /* Increased from 10px */
+  font-weight: 500;         /* Makes the text slightly crisper */
+  color: var(--nasa-red);
+  line-height: 1.8;         /* Added breathing room between lines */
+}
 
   /* ── Pool grid ── */
   .pool-grid {
@@ -684,8 +685,35 @@ function confirmReset() {
     showStatus('Enter a valid pool size between 1 and 999.', true);
     return;
   }
+  
+  // Get the current pool size from the live display label
+  const currentSize = parseInt(document.getElementById('stat-total').textContent) || 0;
+  
   pendingResetSize = val;
   document.getElementById('confirm-size').textContent = val;
+  
+  const modalTitle = document.querySelector('#confirm-modal h3');
+  const modalBody = document.querySelector('#confirm-modal p');
+  const modalBtn = document.querySelector('#confirm-modal .btn-danger');
+
+  if (val > currentSize) {
+    // EXPANSION MODE: Safe Warning
+    modalTitle.textContent = '⚡ CONFIRM POOL EXPANSION';
+    modalTitle.style.color = 'var(--cyan)';
+    modalBody.innerHTML = `You are expanding the number pool from <strong>${currentSize}</strong> to <strong>${val}</strong>.<br><br>Existing player allocations will be perfectly preserved. This will simply add ${val - currentSize} new unassigned numbers into rotation.`;
+    modalBtn.textContent = 'YES, EXPAND POOL';
+    modalBtn.style.background = 'var(--ch-orange)';
+    modalBtn.style.borderColor = 'var(--gold)';
+  } else {
+    // DESTRUCTIVE MODE: Full Reset Warning
+    modalTitle.textContent = '⚠ CONFIRM HARD RESET';
+    modalTitle.style.color = 'var(--nasa-red)';
+    modalBody.innerHTML = `This will clear <strong>ALL</strong> existing player number allocations and generate a completely fresh pool of <strong>${val}</strong> numbers.<br><br>All previous player combinations will be permanently invalidated!`;
+    modalBtn.textContent = 'YES, WIPE & RESET';
+    modalBtn.style.background = 'rgba(252,61,33,0.15)';
+    modalBtn.style.borderColor = 'var(--nasa-red)';
+  }
+
   document.getElementById('confirm-modal').classList.add('show');
 }
 
