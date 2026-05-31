@@ -107,6 +107,12 @@ CREATE POLICY "admin remove score"
   USING (true)
   WITH CHECK (true);
 
+-- scores: only authenticated staff can hard-delete (wipe all)
+CREATE POLICY "admin delete score"
+  ON scores FOR DELETE
+  TO authenticated
+  USING (true);
+
 -- pool_config: public read (game needs pool_size for odds display)
 CREATE POLICY "public pool read"
   ON pool_config FOR SELECT

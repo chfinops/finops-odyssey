@@ -554,6 +554,40 @@
       </div>
     </div>
 
+    <!-- Danger zone -->
+    <div class="card card-full" style="border-color:rgba(252,61,33,0.5);background:rgba(252,61,33,0.04)">
+      <div class="card-title" style="color:var(--nasa-red);border-color:rgba(252,61,33,0.3)">
+        ☢ DANGER ZONE
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <div style="font-size:11px;color:var(--muted);line-height:1.7;max-width:500px">
+          <strong style="color:var(--nasa-red)">WIPE ALL SCORES &amp; COMBOS</strong> — permanently deletes
+          every player score and clears all combo allocations. Use for a clean reset between event days.
+          Pool numbers are preserved.
+        </div>
+        <button class="btn btn-danger" style="white-space:nowrap" onclick="confirmWipe()">
+          ☢ WIPE ALL SCORES &amp; COMBOS
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Wipe all modal -->
+<div class="confirm-modal" id="wipe-confirm-modal">
+  <div class="confirm-box">
+    <h3>☢ WIPE ALL DATA?</h3>
+    <p>
+      This permanently <strong style="color:var(--nasa-red)">hard-deletes</strong> every player score
+      and clears all combo allocations.<br><br>
+      The pool numbers remain — run <em>Reset Pool</em> separately if you want new numbers.<br><br>
+      <strong>This cannot be undone.</strong>
+    </p>
+    <div class="confirm-btns">
+      <button class="btn btn-danger" style="flex:1" onclick="doWipeAll()">YES, WIPE ALL</button>
+      <button class="btn btn-secondary" style="flex:1" onclick="closeWipeConfirm()">CANCEL</button>
+    </div>
   </div>
 </div>
 
@@ -809,6 +843,36 @@ async function doReset() {
   showStatus(`Pool reset! New size: ${size}. ${size} numbers generated. Lock can now be set.`);
   await logAudit('pool_reset', `Pool reset to size ${size}`);
   await loadPoolConfig();
+}
+
+// ── Wipe all ──────────────────────────────────────────────────────
+function confirmWipe() {
+  document.getElementById('wipe-confirm-modal').classList.add('show');
+}
+
+function closeWipeConfirm() {
+  document.getElementById('wipe-confirm-modal').classList.remove('show');
+}
+
+async function doWipeAll() {
+  closeWipeConfirm();
+  showStatus('Wiping all scores and allocations…');
+
+  const scoresDel = await adminFetch(
+    '/rest/v1/scores?id=neq.00000000-0000-0000-0000-000000000000',
+    { method: 'DELETE' }
+  );
+  if (!scoresDel.ok) { showStatus(`Failed to delete scores (${scoresDel.status}): ${scoresDel.error}`, true); return; }
+
+  const allocDel = await adminFetch(
+    '/rest/v1/allocations?id=neq.00000000-0000-0000-0000-000000000000',
+    { method: 'DELETE' }
+  );
+  if (!allocDel.ok) { showStatus(`Failed to clear allocations (${allocDel.status}): ${allocDel.error}`, true); return; }
+
+  showStatus('All scores and combos wiped. Ready for fresh start.');
+  await logAudit('wipe_all', 'All player scores and combo allocations deleted.');
+  await loadAll();
 }
 
 // ── Leaderboard ──────────────────────────────────────────────────

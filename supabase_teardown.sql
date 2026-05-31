@@ -12,6 +12,7 @@ DROP POLICY IF EXISTS "public leaderboard read"    ON scores;
 DROP POLICY IF EXISTS "admin select all scores"    ON scores;
 DROP POLICY IF EXISTS "public score insert"        ON scores;
 DROP POLICY IF EXISTS "admin remove score"         ON scores;
+DROP POLICY IF EXISTS "admin delete score"         ON scores;
 
 DROP POLICY IF EXISTS "public pool read"           ON pool_config;
 DROP POLICY IF EXISTS "admin pool update"          ON pool_config;
