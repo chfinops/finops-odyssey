@@ -658,6 +658,32 @@ function showAdmin(email) {
   document.getElementById('admin-screen').style.display = 'block';
   document.getElementById('user-email-display').textContent = email;
   loadAll();
+  subscribeRealtime();
+}
+
+let _lbDebounce = null;
+function debouncedLoadLeaderboard() {
+  clearTimeout(_lbDebounce);
+  _lbDebounce = setTimeout(loadLeaderboard, 1500);
+}
+
+function subscribeRealtime() {
+  db.channel('audit-changes')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'audit_log' },
+        () => loadAuditLog())
+    .subscribe();
+
+  db.channel('pool-changes')
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'pool_config' },
+        () => loadPoolConfig())
+    .subscribe();
+
+  db.channel('scores-changes')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'scores' },
+        debouncedLoadLeaderboard)
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'scores' },
+        debouncedLoadLeaderboard)
+    .subscribe();
 }
 
 // Auto-restore session on reload
@@ -707,7 +733,7 @@ async function toggleSkip() {
   });
   if (!res.ok) { showStatus(`Failed to toggle skip (${res.status}): ${res.error}`, true); return; }
   showStatus(`Skip button ${next ? 'enabled — players can skip' : 'disabled — players must play'}.`);
-  logAudit('toggle_skip', `Skip ${next ? 'enabled' : 'disabled'}`);
+  await logAudit('toggle_skip', `Skip ${next ? 'enabled' : 'disabled'}`);
   await loadPoolConfig();
 }
 
@@ -781,7 +807,7 @@ async function doReset() {
   if (!upRes.ok) { showStatus(`Failed to save pool (${upRes.status}): ${upRes.error}`, true); return; }
 
   showStatus(`Pool reset! New size: ${size}. ${size} numbers generated. Lock can now be set.`);
-  logAudit('pool_reset', `Pool reset to size ${size}`);
+  await logAudit('pool_reset', `Pool reset to size ${size}`);
   await loadPoolConfig();
 }
 
@@ -831,13 +857,13 @@ async function removeScore(id, nick, combo = '') {
     await adminFetch(`/rest/v1/allocations?combination=eq.${encodeURIComponent(combo)}`, { method: 'DELETE' });
   }
   showStatus(`"${nick}" removed from leaderboard.`);
-  logAudit('remove_score', `Removed player "${nick}" (combo: ${combo || 'none'})`);
+  await logAudit('remove_score', `Removed player "${nick}" (combo: ${combo || 'none'})`);
   loadLeaderboard();
 }
 
 // ── Audit log ─────────────────────────────────────────────────────
-function logAudit(action, detail) {
-  adminFetch('/rest/v1/audit_log', {
+async function logAudit(action, detail) {
+  await adminFetch('/rest/v1/audit_log', {
     method: 'POST',
     headers: { 'Prefer': 'return=minimal' },
     body: JSON.stringify({ actor: currentUserEmail, action, detail }),
