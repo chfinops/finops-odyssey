@@ -2723,7 +2723,7 @@ async function promptNicknameAndNumber(sc, showCombo, isSkip = false) {
               CHANCE OF WINNING: 1 IN ${finalOdds}
             </div>
           </div>
-          ${isSkip ? `<button class="pixel-btn secondary" style="margin-top:14px;width:100%;max-width:200px" onclick="restartGame()">FLY AGAIN</button>` : ''}
+          ${isSkip ? `<div style="display:flex;justify-content:center;margin-top:14px"><button class="pixel-btn secondary" style="width:100%;max-width:200px" onclick="restartGame()">FLY AGAIN</button></div>` : ''}
         `;
       } else {
         const lb = await fetchLeaderboard();
