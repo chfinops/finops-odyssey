@@ -484,7 +484,7 @@
     <div class="card">
       <div class="card-title">
         <span>⚙ RESET & RESIZE POOL</span>
-        <button class="btn-sm btn-skip-on" id="skip-toggle" onclick="toggleSkip()">✓ ALLOW PLAYERS TO SKIP</button>
+        <button class="btn-sm btn-skip-on" id="skip-toggle" onclick="toggleSkip()"><span style="font-size:14px;vertical-align:middle;margin-right:4px">✓</span> ALLOW PLAYERS TO SKIP</button>
       </div>
       <div class="reset-form">
         <label>New pool size (how many unique numbers to offer, 1–999)</label>
@@ -661,7 +661,9 @@ async function loadPoolConfig() {
   const skipToggle = document.getElementById('skip-toggle');
   if (skipToggle) {
     const on = data.skip_enabled !== false;
-    skipToggle.textContent = on ? '✓ ALLOW PLAYERS TO SKIP' : '✗ SKIP DISABLED';
+    skipToggle.innerHTML = on
+      ? '<span style="font-size:14px;vertical-align:middle;margin-right:4px">✓</span> ALLOW PLAYERS TO SKIP'
+      : '<span style="font-size:14px;vertical-align:middle;margin-right:4px">✗</span> SKIP DISABLED';
     skipToggle.className = `btn-sm ${on ? 'btn-skip-on' : 'btn-danger'}`;
     skipToggle.dataset.skipEnabled = on;
   }
