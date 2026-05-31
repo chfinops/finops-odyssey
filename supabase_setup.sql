@@ -23,9 +23,13 @@ CREATE TABLE IF NOT EXISTS pool_config (
   id            integer PRIMARY KEY DEFAULT 1,
   pool_size     integer NOT NULL DEFAULT 100,
   pool_numbers  integer[] NOT NULL DEFAULT '{}',
+  skip_enabled  boolean NOT NULL DEFAULT true,   -- admin toggle: allow players to skip
   updated_at    timestamptz DEFAULT now(),
   CONSTRAINT single_row CHECK (id = 1)
 );
+
+-- Existing deployments: run this once to add the column
+-- ALTER TABLE pool_config ADD COLUMN IF NOT EXISTS skip_enabled boolean NOT NULL DEFAULT true;
 
 -- Allocations (log of combination numbers handed out)
 CREATE TABLE IF NOT EXISTS allocations (

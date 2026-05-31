@@ -2519,11 +2519,13 @@ let currentOdds = 100;
 async function fetchPoolConfig() {
   if (!db) return;
   try {
-    const { data } = await db.from('pool_config').select('pool_size').single();
+    const { data } = await db.from('pool_config').select('pool_size, skip_enabled').single();
     if (data) {
       poolSize = data.pool_size;
       currentOdds = poolSize;
       updateOddsDisplay();
+      const skipBtn = document.getElementById('skip-btn');
+      if (skipBtn) skipBtn.style.display = data.skip_enabled === false ? 'none' : '';
     }
   } catch(e) { console.warn('Pool config fetch failed:', e); }
 }
@@ -2711,8 +2713,8 @@ async function promptNicknameAndNumber(sc, showCombo, isSkip = false) {
             <div style="font-size:36px;color:var(--gold);letter-spacing:8px;text-shadow:0 0 20px var(--gold);font-family:'Orbitron',sans-serif;font-weight:900">${combo}</div>
             <div style="font-size:6px;color:rgba(200,216,232,0.7);margin-top:8px;line-height:2">
               📸 TAKE A SCREENSHOT NOW!<br>
-              BRING THIS NUMBER TO THE<br>
-              CLOUDHEALTH BOOTH AT FINOPSX<br>
+              FIND US AT <strong style="color:var(--gold)">BOOTH E8</strong><br>
+              CLOUDHEALTH AT FINOPSX<br>
               TRY THE LOCK. WIN THE PRIZE.
             </div>
             <div style="margin-top:8px;font-size:6px;color:var(--green)">

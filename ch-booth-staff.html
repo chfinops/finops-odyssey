@@ -116,6 +116,13 @@
   }
   .btn-danger:hover { background: var(--nasa-red); color: var(--star); }
 
+  .btn-skip-on {
+    background: rgba(57,255,20,0.15);
+    color: var(--green);
+    border: 1px solid var(--green);
+  }
+  .btn-skip-on:hover { background: var(--green); color: var(--bg); }
+
   .btn-secondary {
     background: var(--bg3);
     color: var(--cyan);
@@ -475,7 +482,10 @@
 
     <!-- Reset / resize pool -->
     <div class="card">
-      <div class="card-title">⚙ RESET & RESIZE POOL</div>
+      <div class="card-title">
+        <span>⚙ RESET & RESIZE POOL</span>
+        <button class="btn-sm btn-skip-on" id="skip-toggle" onclick="toggleSkip()">✓ ALLOW PLAYERS TO SKIP</button>
+      </div>
       <div class="reset-form">
         <label>New pool size (how many unique numbers to offer, 1–999)</label>
         <input type="number" id="new-pool-size" min="1" max="999" placeholder="e.g. 50" />
@@ -648,12 +658,33 @@ async function loadPoolConfig() {
   document.getElementById('stat-total').textContent = data.pool_numbers?.length || 0;
   document.getElementById('new-pool-size').placeholder = `current: ${data.pool_size}`;
 
+  const skipToggle = document.getElementById('skip-toggle');
+  if (skipToggle) {
+    const on = data.skip_enabled !== false;
+    skipToggle.textContent = on ? '✓ ALLOW PLAYERS TO SKIP' : '✗ SKIP DISABLED';
+    skipToggle.className = `btn-sm ${on ? 'btn-skip-on' : 'btn-danger'}`;
+    skipToggle.dataset.skipEnabled = on;
+  }
+
   // Load allocations count
   const { count } = await db.from('allocations').select('*', { count: 'exact', head: true });
   document.getElementById('stat-allocated').textContent = count || 0;
 
   // Render pool grid
   renderPoolGrid(data.pool_numbers || []);
+}
+
+async function toggleSkip() {
+  const btn = document.getElementById('skip-toggle');
+  const current = btn.dataset.skipEnabled === 'true';
+  const next = !current;
+  const res = await adminFetch('/rest/v1/pool_config?id=eq.1', {
+    method: 'PATCH',
+    body: JSON.stringify({ skip_enabled: next }),
+  });
+  if (!res.ok) { showStatus(`Failed to toggle skip (${res.status}): ${res.error}`, true); return; }
+  showStatus(`Skip button ${next ? 'enabled — players can skip' : 'disabled — players must play'}.`);
+  await loadPoolConfig();
 }
 
 async function renderPoolGrid(numbers) {
