@@ -490,7 +490,7 @@
         
         <div class="reset-warning" style="margin-top: 5px;">
           <span style="font-size: 14px; color: var(--green); display: block; margin-bottom: 4px;">
-            ⚡ Expand Pool: Safely injects new combinations. Existing players are safe.
+            ⚡ Resize Pool: Safely grows or shrinks. Allocated codes always preserved.
           </span>
           <span style="font-size: 14px; color: var(--nasa-red); display: block;">
             ⚠ Hard Reset: Permanently wipes all current player allocations!
@@ -498,7 +498,7 @@
         </div>
         
         <div style="display: flex; gap: 10px; margin-top: 10px;">
-          <button class="btn btn-primary" style="flex: 1;" onclick="prepareAction('expand')">🚀 GROW POOL</button>
+          <button class="btn btn-primary" style="flex: 1;" onclick="prepareAction('expand')">⚙ RESIZE POOL</button>
           <button class="btn btn-danger" style="flex: 1; padding: 14px 0;" onclick="prepareAction('wipe')">☢ WIPE & RESET</button>
         </div>
       </div>
@@ -761,10 +761,12 @@ async function loadPoolConfig() {
 
   // Load allocations count
   const { count } = await db.from('allocations').select('*', { count: 'exact', head: true });
-  document.getElementById('stat-allocated').textContent = count || 0;
+  _poolNumbers = data.pool_numbers || [];
+  _allocatedCount = count || 0;
+  document.getElementById('stat-allocated').textContent = _allocatedCount;
 
   // Render pool grid
-  renderPoolGrid(data.pool_numbers || []);
+  renderPoolGrid(_poolNumbers);
 }
 
 async function toggleSkip() {
@@ -805,6 +807,8 @@ async function renderPoolGrid(numbers) {
 
 let pendingResetSize = null;
 let pendingPoolAction = null; // Tracks 'expand' or 'wipe'
+let _poolNumbers = [];
+let _allocatedCount = 0;
 
 function prepareAction(actionType) {
   const val = parseInt(document.getElementById('new-pool-size').value);
@@ -829,18 +833,34 @@ function prepareAction(actionType) {
   }
 
   if (actionType === 'expand') {
-    if (val <= currentSize) {
-      showStatus(`Target size (${val}) must be larger than current size (${currentSize}) to expand.`, true);
+    if (val === currentSize) {
+      showStatus('Pool is already that size.', true);
       return;
     }
-    // Set up the Modal for Safe Expansion
-    modalTitle.textContent = '⚡ CONFIRM POOL EXPANSION';
-    modalTitle.style.color = 'var(--cyan)';
-    modalBody.innerHTML = `You are expanding the pool from <strong>${currentSize}</strong> to <strong>${val}</strong>.<br><br>Existing player allocations will be perfectly preserved. This adds ${val - currentSize} new unassigned numbers into rotation.`;
-    modalBtn.textContent = 'YES, EXPAND POOL';
-    modalBtn.style.background = 'var(--ch-orange)';
-    modalBtn.style.borderColor = 'var(--gold)';
-    modalBtn.style.color = '#ffffff';
+    if (val < currentSize) {
+      // SHRINK path
+      if (val < _allocatedCount) {
+        showStatus(`Cannot resize below ${_allocatedCount} — ${_allocatedCount} combo${_allocatedCount !== 1 ? 's' : ''} already allocated.`, true);
+        return;
+      }
+      const remove = currentSize - val;
+      modalTitle.textContent = '⚠ CONFIRM SHRINK';
+      modalTitle.style.color = 'var(--gold)';
+      modalBody.innerHTML = `Removes <strong>${remove}</strong> unallocated number${remove > 1 ? 's' : ''} from the pool.<br><br><strong>${_allocatedCount}</strong> allocated combo code${_allocatedCount !== 1 ? 's' : ''} stay valid — players with a code can still win.`;
+      modalBtn.textContent = 'YES, SHRINK POOL';
+      modalBtn.style.background = 'rgba(255,179,0,0.15)';
+      modalBtn.style.borderColor = 'var(--gold)';
+      modalBtn.style.color = 'var(--gold)';
+    } else {
+      // GROW path
+      modalTitle.textContent = '⚡ CONFIRM POOL EXPANSION';
+      modalTitle.style.color = 'var(--cyan)';
+      modalBody.innerHTML = `You are expanding the pool from <strong>${currentSize}</strong> to <strong>${val}</strong>.<br><br>Existing player allocations will be perfectly preserved. This adds ${val - currentSize} new unassigned numbers into rotation.`;
+      modalBtn.textContent = 'YES, EXPAND POOL';
+      modalBtn.style.background = 'var(--ch-orange)';
+      modalBtn.style.borderColor = 'var(--gold)';
+      modalBtn.style.color = '#ffffff';
+    }
   } else if (actionType === 'wipe') {
     // Set up the Modal for Destructive Reset
     modalTitle.textContent = '⚠ CONFIRM DESTRUCTIVE WIPE';
@@ -868,47 +888,43 @@ async function doReset() {
   if (!size || !action) return;
 
   if (action === 'expand') {
-    // ───────────────── PATH A: SAFE EXPANSION ─────────────────
-    showStatus('Fetching current pool configurations...');
-    const { data: currentCfg, error: cfgError } = await db.from('pool_config').select('*').single();
-    if (cfgError) {
-      showStatus(`Failed to fetch current config: ${cfgError.message}`, true);
-      return;
-    }
+    const currentNumbers = _poolNumbers; // use cache — no extra DB fetch
+    let newPool;
 
-    const currentNumbers = currentCfg?.pool_numbers || [];
-    showStatus(`Injecting new numbers up to target size ${size}...`);
-    
-    const existingSet = new Set(currentNumbers);
-    const availableNumbers = [];
-    for (let i = 1; i <= 999; i++) {
-      if (!existingSet.has(i)) availableNumbers.push(i);
+    if (size > currentNumbers.length) {
+      // ── GROW ──
+      showStatus(`Adding new numbers to reach size ${size}...`);
+      const existingSet = new Set(currentNumbers);
+      const available = [];
+      for (let i = 1; i <= 999; i++) { if (!existingSet.has(i)) available.push(i); }
+      for (let i = available.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [available[i], available[j]] = [available[j], available[i]];
+      }
+      newPool = [...currentNumbers, ...available.slice(0, size - currentNumbers.length)];
+    } else {
+      // ── SHRINK ──
+      showStatus(`Shrinking pool to ${size}...`);
+      const { data: allocs } = await db.from('allocations').select('combination');
+      const allocatedSet = new Set((allocs || []).map(a => a.combination));
+      const allocated   = currentNumbers.filter(n => allocatedSet.has(String(n).padStart(3, '0')));
+      const unallocated = currentNumbers.filter(n => !allocatedSet.has(String(n).padStart(3, '0')));
+      newPool = [...allocated, ...unallocated.slice(0, size - allocated.length)];
     }
-
-    // Shuffle available remainder pool
-    for (let i = availableNumbers.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [availableNumbers[i], availableNumbers[j]] = [availableNumbers[j], availableNumbers[i]];
-    }
-
-    const numbersNeeded = size - currentNumbers.length;
-    const additionalNumbers = availableNumbers.slice(0, numbersNeeded);
-    const newPool = [...currentNumbers, ...additionalNumbers];
 
     const upRes = await adminFetch(`/rest/v1/pool_config?id=eq.1`, {
       method: 'PATCH',
-      body: JSON.stringify({
-        pool_size: size,
-        pool_numbers: newPool,
-        updated_at: new Date().toISOString(),
-      }),
+      body: JSON.stringify({ pool_size: size, pool_numbers: newPool, updated_at: new Date().toISOString() }),
     });
+    if (!upRes.ok) { showStatus(`Failed to resize pool (${upRes.status}): ${upRes.error}`, true); return; }
 
-    if (!upRes.ok) {
-      showStatus(`Failed to expand pool (${upRes.status}): ${upRes.error}`, true);
-      return;
+    if (size > currentNumbers.length) {
+      showStatus(`Pool expanded to ${size}. Added ${size - currentNumbers.length} numbers. Allocations preserved.`);
+    } else {
+      showStatus(`Pool shrunk to ${size}. ${_allocatedCount} allocated codes preserved.`);
     }
-    showStatus(`Pool expanded successfully! Added ${numbersNeeded} new numbers. Allocations preserved.`);
+    await logAudit('pool_resize', `Pool resized from ${currentNumbers.length} to ${size}`);
+    await loadPoolConfig();
 
   } else if (action === 'wipe') {
     // ───────────────── PATH B: DESTRUCTIVE WIPE ─────────────────
