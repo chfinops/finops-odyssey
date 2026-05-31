@@ -480,27 +480,12 @@
       <div id="status-msg" class="status-bar"></div>
     </div>
 
-    <!-- Reset pool (destructive) -->
+    <!-- Reset / resize pool -->
     <div class="card">
       <div class="card-title">
-        <span>↺ RESET POOL</span>
+        <span>⚙ POOL MANAGEMENT</span>
         <button class="btn-sm btn-skip-on" id="skip-toggle" onclick="toggleSkip()"><span style="font-size:14px;vertical-align:middle;margin-right:4px">✓</span> ALLOW PLAYERS TO SKIP</button>
       </div>
-      <div class="reset-form">
-        <label>Optional: new pool size (leave blank to keep current)</label>
-        <input type="number" id="reset-pool-size" min="1" max="999" placeholder="blank = keep current" />
-        <div class="reset-warning">
-          ⚠ Generates a completely new set of numbers and clears ALL allocations.<br>
-          Every existing combo code is invalidated — players holding a number will not be able to win with it.<br>
-          This cannot be undone.
-        </div>
-        <button class="btn btn-danger" onclick="confirmReset()">↺ RESET POOL</button>
-      </div>
-    </div>
-
-    <!-- Resize pool (non-destructive) -->
-    <div class="card">
-      <div class="card-title">⚙ RESIZE POOL</div>
       <div class="pool-stats">
         Current: <span id="resize-current">—</span> &nbsp;·&nbsp;
         Free: <span id="resize-free">—</span> &nbsp;·&nbsp;
@@ -508,12 +493,20 @@
       </div>
       <div class="reset-form">
         <label>New pool size (1–999)</label>
-        <input type="number" id="resize-pool-size" min="1" max="999"
-               placeholder="e.g. 80" oninput="onResizeInput()" />
+        <input type="number" id="reset-pool-size" min="1" max="999"
+               placeholder="blank = keep current" oninput="onResizeInput()" />
         <div id="resize-hint" style="font-size:10px;min-height:16px;line-height:1.6"></div>
-        <button class="btn btn-secondary" id="resize-btn" onclick="confirmResize()" disabled>
-          SET SIZE
-        </button>
+        <div class="reset-warning">
+          ⚠ RESET generates completely new numbers and clears ALL allocations.<br>
+          Every existing combo code is invalidated — players holding a number will not be able to win with it.<br>
+          SET SIZE adjusts size only — no allocations touched.
+        </div>
+        <div style="display:flex;gap:10px">
+          <button class="btn btn-secondary" id="resize-btn" style="flex:1" onclick="confirmResize()" disabled>
+            SET SIZE
+          </button>
+          <button class="btn btn-danger" style="flex:1" onclick="confirmReset()">↺ RESET POOL</button>
+        </div>
       </div>
     </div>
 
@@ -894,7 +887,7 @@ async function doReset() {
 let _pendingResizeSize = null;
 
 function onResizeInput() {
-  const val  = parseInt(document.getElementById('resize-pool-size').value);
+  const val  = parseInt(document.getElementById('reset-pool-size').value);
   const hint = document.getElementById('resize-hint');
   const btn  = document.getElementById('resize-btn');
   if (!val || val < 1 || val > 999) { hint.textContent = ''; btn.disabled = true; return; }
@@ -916,7 +909,7 @@ function onResizeInput() {
 }
 
 function confirmResize() {
-  const val = parseInt(document.getElementById('resize-pool-size').value);
+  const val = parseInt(document.getElementById('reset-pool-size').value);
   if (!val || val < 1 || val > 999 || val < _allocatedCount) return;
   if (val === _poolNumbers.length) { showStatus('Pool is already that size.', true); return; }
   _pendingResizeSize = val;
