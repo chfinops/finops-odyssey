@@ -116,6 +116,13 @@
   }
   .btn-danger:hover { background: var(--nasa-red); color: var(--star); }
 
+  .btn-skip-on {
+    background: rgba(57,255,20,0.15);
+    color: var(--green);
+    border: 1px solid var(--green);
+  }
+  .btn-skip-on:hover { background: var(--green); color: var(--bg); }
+
   .btn-secondary {
     background: var(--bg3);
     color: var(--cyan);
@@ -476,7 +483,10 @@
 
     <!-- Reset / resize pool -->
     <div class="card">
-      <div class="card-title">⚙ RESET & RESIZE POOL</div>
+      <div class="card-title">
+        <span>⚙ RESET & RESIZE POOL</span>
+        <button class="btn-sm btn-skip-on" id="skip-toggle" onclick="toggleSkip()"><span style="font-size:14px;vertical-align:middle;margin-right:4px">✓</span> ALLOW PLAYERS TO SKIP</button>
+      </div>
       <div class="reset-form">
         <label>New pool size (how many unique numbers to offer, 1–999)</label>
         <input type="number" id="new-pool-size" min="1" max="999" placeholder="e.g. 50" />
@@ -526,6 +536,58 @@
       </div>
     </div>
 
+    <!-- Audit log -->
+    <div class="card card-full">
+      <div class="card-title">
+        <span>📋 ADMIN ACTIVITY LOG</span>
+        <button class="btn-secondary btn-sm" onclick="loadAuditLog()">↻ REFRESH</button>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="lb-table">
+          <thead>
+            <tr><th>TIME</th><th>STAFF</th><th>ACTION</th><th>DETAIL</th></tr>
+          </thead>
+          <tbody id="audit-tbody">
+            <tr><td colspan="4" class="empty-state">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Danger zone -->
+    <div class="card card-full" style="border-color:rgba(252,61,33,0.5);background:rgba(252,61,33,0.04)">
+      <div class="card-title" style="color:var(--nasa-red);border-color:rgba(252,61,33,0.3)">
+        ☢ DANGER ZONE
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <div style="font-size:11px;color:var(--muted);line-height:1.7;max-width:500px">
+          <strong style="color:var(--nasa-red)">WIPE ALL SCORES &amp; COMBOS</strong> — permanently deletes
+          every player score and clears all combo allocations. Use for a clean reset between event days.
+          Pool numbers are preserved.
+        </div>
+        <button class="btn btn-danger" style="white-space:nowrap" onclick="confirmWipe()">
+          ☢ WIPE ALL SCORES &amp; COMBOS
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Wipe all modal -->
+<div class="confirm-modal" id="wipe-confirm-modal">
+  <div class="confirm-box">
+    <h3>☢ WIPE ALL DATA?</h3>
+    <p>
+      This permanently <strong style="color:var(--nasa-red)">hard-deletes</strong> every player score
+      and clears all combo allocations.<br><br>
+      The pool numbers remain — run <em>Reset Pool</em> separately if you want new numbers.<br><br>
+      <strong>This cannot be undone.</strong>
+    </p>
+    <div class="confirm-btns">
+      <button class="btn btn-danger" style="flex:1" onclick="doWipeAll()">YES, WIPE ALL</button>
+      <button class="btn btn-secondary" style="flex:1" onclick="closeWipeConfirm()">CANCEL</button>
+    </div>
   </div>
 </div>
 
@@ -622,11 +684,40 @@ async function doLogout() {
   document.getElementById('login-screen').style.display = 'flex';
 }
 
+let currentUserEmail = '';
+
 function showAdmin(email) {
+  currentUserEmail = email;
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('admin-screen').style.display = 'block';
   document.getElementById('user-email-display').textContent = email;
   loadAll();
+  subscribeRealtime();
+}
+
+let _lbDebounce = null;
+function debouncedLoadLeaderboard() {
+  clearTimeout(_lbDebounce);
+  _lbDebounce = setTimeout(loadLeaderboard, 1500);
+}
+
+function subscribeRealtime() {
+  db.channel('audit-changes')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'audit_log' },
+        () => loadAuditLog())
+    .subscribe();
+
+  db.channel('pool-changes')
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'pool_config' },
+        () => loadPoolConfig())
+    .subscribe();
+
+  db.channel('scores-changes')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'scores' },
+        debouncedLoadLeaderboard)
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'scores' },
+        debouncedLoadLeaderboard)
+    .subscribe();
 }
 
 // Auto-restore session on reload
@@ -636,7 +727,7 @@ db.auth.onAuthStateChange((event, session) => {
 
 // ── Load everything ──────────────────────────────────────────────
 async function loadAll() {
-  await Promise.all([loadPoolConfig(), loadLeaderboard()]);
+  await Promise.all([loadPoolConfig(), loadLeaderboard(), loadAuditLog()]);
 }
 
 // ── Pool config ──────────────────────────────────────────────────
@@ -648,12 +739,36 @@ async function loadPoolConfig() {
   document.getElementById('stat-total').textContent = data.pool_numbers?.length || 0;
   document.getElementById('new-pool-size').placeholder = `current: ${data.pool_size}`;
 
+  const skipToggle = document.getElementById('skip-toggle');
+  if (skipToggle) {
+    const on = data.skip_enabled !== false;
+    skipToggle.innerHTML = on
+      ? '<span style="font-size:14px;vertical-align:middle;margin-right:4px">✓</span> ALLOW PLAYERS TO SKIP'
+      : '<span style="font-size:14px;vertical-align:middle;margin-right:4px">✗</span> SKIP DISABLED';
+    skipToggle.className = `btn-sm ${on ? 'btn-skip-on' : 'btn-danger'}`;
+    skipToggle.dataset.skipEnabled = on;
+  }
+
   // Load allocations count
   const { count } = await db.from('allocations').select('*', { count: 'exact', head: true });
   document.getElementById('stat-allocated').textContent = count || 0;
 
   // Render pool grid
   renderPoolGrid(data.pool_numbers || []);
+}
+
+async function toggleSkip() {
+  const btn = document.getElementById('skip-toggle');
+  const current = btn.dataset.skipEnabled === 'true';
+  const next = !current;
+  const res = await adminFetch('/rest/v1/pool_config?id=eq.1', {
+    method: 'PATCH',
+    body: JSON.stringify({ skip_enabled: next }),
+  });
+  if (!res.ok) { showStatus(`Failed to toggle skip (${res.status}): ${res.error}`, true); return; }
+  showStatus(`Skip button ${next ? 'enabled — players can skip' : 'disabled — players must play'}.`);
+  await logAudit('toggle_skip', `Skip ${next ? 'enabled' : 'disabled'}`);
+  await loadPoolConfig();
 }
 
 async function renderPoolGrid(numbers) {
@@ -817,7 +932,39 @@ async function doReset() {
     showStatus(`Pool completely reset! New size: ${size}. Previous allocations cleared.`);
   }
 
+  showStatus(`Pool reset! New size: ${size}. ${size} numbers generated. Lock can now be set.`);
+  await logAudit('pool_reset', `Pool reset to size ${size}`);
   await loadPoolConfig();
+}
+
+// ── Wipe all ──────────────────────────────────────────────────────
+function confirmWipe() {
+  document.getElementById('wipe-confirm-modal').classList.add('show');
+}
+
+function closeWipeConfirm() {
+  document.getElementById('wipe-confirm-modal').classList.remove('show');
+}
+
+async function doWipeAll() {
+  closeWipeConfirm();
+  showStatus('Wiping all scores and allocations…');
+
+  const scoresDel = await adminFetch(
+    '/rest/v1/scores?id=neq.00000000-0000-0000-0000-000000000000',
+    { method: 'DELETE' }
+  );
+  if (!scoresDel.ok) { showStatus(`Failed to delete scores (${scoresDel.status}): ${scoresDel.error}`, true); return; }
+
+  const allocDel = await adminFetch(
+    '/rest/v1/allocations?id=neq.00000000-0000-0000-0000-000000000000',
+    { method: 'DELETE' }
+  );
+  if (!allocDel.ok) { showStatus(`Failed to clear allocations (${allocDel.status}): ${allocDel.error}`, true); return; }
+
+  showStatus('All scores and combos wiped. Ready for fresh start.');
+  await logAudit('wipe_all', 'All player scores and combo allocations deleted.');
+  await loadAll();
 }
 
 // ── Leaderboard ──────────────────────────────────────────────────
@@ -866,7 +1013,34 @@ async function removeScore(id, nick, combo = '') {
     await adminFetch(`/rest/v1/allocations?combination=eq.${encodeURIComponent(combo)}`, { method: 'DELETE' });
   }
   showStatus(`"${nick}" removed from leaderboard.`);
+  await logAudit('remove_score', `Removed player "${nick}" (combo: ${combo || 'none'})`);
   loadLeaderboard();
+}
+
+// ── Audit log ─────────────────────────────────────────────────────
+async function logAudit(action, detail) {
+  await adminFetch('/rest/v1/audit_log', {
+    method: 'POST',
+    headers: { 'Prefer': 'return=minimal' },
+    body: JSON.stringify({ actor: currentUserEmail, action, detail }),
+  }).catch(() => {});
+}
+
+async function loadAuditLog() {
+  const res = await adminFetch('/rest/v1/audit_log?order=created_at.desc&limit=50');
+  const tbody = document.getElementById('audit-tbody');
+  if (!tbody) return;
+  if (!res.ok || !res.data?.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No activity yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = res.data.map(r => `
+    <tr>
+      <td>${new Date(r.created_at).toLocaleTimeString()}</td>
+      <td style="color:var(--muted)">${r.actor}</td>
+      <td style="color:var(--cyan);letter-spacing:1px">${r.action}</td>
+      <td>${r.detail || '—'}</td>
+    </tr>`).join('');
 }
 
 // ── Helpers ───────────────────────────────────────────────────────

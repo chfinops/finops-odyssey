@@ -23,15 +23,28 @@ CREATE TABLE IF NOT EXISTS pool_config (
   id            integer PRIMARY KEY DEFAULT 1,
   pool_size     integer NOT NULL DEFAULT 100,
   pool_numbers  integer[] NOT NULL DEFAULT '{}',
+  skip_enabled  boolean NOT NULL DEFAULT true,   -- admin toggle: allow players to skip
   updated_at    timestamptz DEFAULT now(),
   CONSTRAINT single_row CHECK (id = 1)
 );
+
+-- Existing deployments: run this once to add the column
+-- ALTER TABLE pool_config ADD COLUMN IF NOT EXISTS skip_enabled boolean NOT NULL DEFAULT true;
 
 -- Allocations (log of combination numbers handed out)
 CREATE TABLE IF NOT EXISTS allocations (
   id            uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   combination   text NOT NULL,   -- e.g. '042'
   created_at    timestamptz DEFAULT now()
+);
+
+-- Audit log (admin action history)
+CREATE TABLE IF NOT EXISTS audit_log (
+  id         uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  actor      text NOT NULL,       -- staff email
+  action     text NOT NULL,       -- 'pool_reset' | 'remove_score' | 'toggle_skip'
+  detail     text,                -- human-readable description
+  created_at timestamptz DEFAULT now()
 );
 
 -- ── 2. Seed initial pool (100 numbers from 001-999) ─────────────
@@ -60,10 +73,14 @@ CREATE INDEX IF NOT EXISTS idx_scores_leaderboard
 CREATE INDEX IF NOT EXISTS idx_allocations_combo
   ON allocations (combination);
 
+CREATE INDEX IF NOT EXISTS idx_audit_log_created
+  ON audit_log (created_at DESC);
+
 -- ── 4. Row Level Security ────────────────────────────────────────
 ALTER TABLE scores      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pool_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE allocations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_log   ENABLE ROW LEVEL SECURITY;
 
 -- scores: public read (non-removed only)
 CREATE POLICY "public leaderboard read"
@@ -90,6 +107,12 @@ CREATE POLICY "admin remove score"
   USING (true)
   WITH CHECK (true);
 
+-- scores: only authenticated staff can hard-delete (wipe all)
+CREATE POLICY "admin delete score"
+  ON scores FOR DELETE
+  TO authenticated
+  USING (true);
+
 -- pool_config: public read (game needs pool_size for odds display)
 CREATE POLICY "public pool read"
   ON pool_config FOR SELECT
@@ -115,6 +138,17 @@ CREATE POLICY "admin allocation read"
 -- allocations: authenticated staff can delete (during pool reset)
 CREATE POLICY "admin allocation delete"
   ON allocations FOR DELETE
+  TO authenticated
+  USING (true);
+
+-- audit_log: authenticated staff can insert and read
+CREATE POLICY "admin audit insert"
+  ON audit_log FOR INSERT
+  TO authenticated
+  WITH CHECK (true);
+
+CREATE POLICY "admin audit read"
+  ON audit_log FOR SELECT
   TO authenticated
   USING (true);
 
