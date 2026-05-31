@@ -483,18 +483,24 @@
 
     <!-- Reset / resize pool -->
     <div class="card">
-      <div class="card-title">
-        <span>⚙ RESET & RESIZE POOL</span>
-        <button class="btn-sm btn-skip-on" id="skip-toggle" onclick="toggleSkip()"><span style="font-size:14px;vertical-align:middle;margin-right:4px">✓</span> ALLOW PLAYERS TO SKIP</button>
-      </div>
+      <div class="card-title">⚙ POOL MANAGEMENT CONTROL PANEL</div>
       <div class="reset-form">
-        <label>New pool size (how many unique numbers to offer, 1–999)</label>
-        <input type="number" id="new-pool-size" min="1" max="999" placeholder="e.g. 50" />
-       <div class="reset-warning">
-        ⚠ Growing the pool size preserves existing allocations. <br>
-        Shrinking or resetting completely requires a full wipe.
-      </div>
-        <button class="btn btn-danger" onclick="confirmReset()">RESET POOL + SET SIZE</button>
+        <label>Target Pool Size (1–999)</label>
+        <input type="number" id="new-pool-size" min="1" max="999" placeholder="e.g. 150" />
+        
+        <div class="reset-warning" style="margin-top: 5px;">
+          <span style="font-size: 14px; color: var(--green); display: block; margin-bottom: 4px;">
+            ⚡ Expand Pool: Safely injects new combinations. Existing players are safe.
+          </span>
+          <span style="font-size: 14px; color: var(--nasa-red); display: block;">
+            ⚠ Hard Reset: Permanently wipes all current player allocations!
+          </span>
+        </div>
+        
+        <div style="display: flex; gap: 10px; margin-top: 10px;">
+          <button class="btn btn-primary" style="flex: 1;" onclick="prepareAction('expand')">🚀 GROW POOL</button>
+          <button class="btn btn-danger" style="flex: 1; padding: 14px 0;" onclick="prepareAction('wipe')">☢ WIPE & RESET</button>
+        </div>
       </div>
     </div>
 
@@ -594,10 +600,14 @@
 <!-- Confirm reset modal -->
 <div class="confirm-modal" id="confirm-modal">
   <div class="confirm-box">
-    <h3>⚠ CONFIRM RESET</h3>
-    <p>This will clear ALL number allocations and generate a new pool of <strong id="confirm-size">—</strong> numbers.<br><br>All previous combinations are invalidated. Any player holding an old number will not be able to win.</p>
+    <h3 id="modal-title-dynamic">⚠ CONFIRM ACTIONS</h3>
+    <p>
+      Target pool size configured to: <strong id="confirm-size" style="color: var(--cyan);">—</strong>
+      <br><br>
+      <span id="modal-text-dynamic">Loading details...</span>
+    </p>
     <div class="confirm-btns">
-      <button class="btn btn-danger" style="flex:1" onclick="doReset()">YES, RESET</button>
+      <button class="btn btn-danger" id="modal-btn-execute" style="flex:1" onclick="doReset()">CONFIRM</button>
       <button class="btn btn-secondary" style="flex:1" onclick="closeConfirm()">CANCEL</button>
     </div>
   </div>
@@ -792,94 +802,99 @@ async function renderPoolGrid(numbers) {
 }
 
 // ── Reset pool ────────────────────────────────────────────────────
-let pendingResetSize = null;
 
-function confirmReset() {
+let pendingResetSize = null;
+let pendingPoolAction = null; // Tracks 'expand' or 'wipe'
+
+function prepareAction(actionType) {
   const val = parseInt(document.getElementById('new-pool-size').value);
   if (!val || val < 1 || val > 999) {
     showStatus('Enter a valid pool size between 1 and 999.', true);
     return;
   }
   
-  // Get the current pool size from the live display label
   const currentSize = parseInt(document.getElementById('stat-total').textContent) || 0;
-  
   pendingResetSize = val;
-  document.getElementById('confirm-size').textContent = val;
+  pendingPoolAction = actionType;
   
-  const modalTitle = document.querySelector('#confirm-modal h3');
-  const modalBody = document.querySelector('#confirm-modal p');
-  const modalBtn = document.querySelector('#confirm-modal .btn-danger');
+  const modalTitle = document.getElementById('modal-title-dynamic');
+  const modalBody = document.getElementById('modal-text-dynamic');
+  const modalBtn = document.getElementById('modal-btn-execute');
+  const confirmSizeEl = document.getElementById('confirm-size');
 
-  if (val > currentSize) {
-    // EXPANSION MODE: Safe Warning
+  // Safety fallback if DOM isn't fully ready
+  if (!modalTitle || !modalBody || !modalBtn || !confirmSizeEl) {
+    console.error("❌ Required modal elements missing from HTML.");
+    return;
+  }
+
+  if (actionType === 'expand') {
+    if (val <= currentSize) {
+      showStatus(`Target size (${val}) must be larger than current size (${currentSize}) to expand.`, true);
+      return;
+    }
+    // Set up the Modal for Safe Expansion
     modalTitle.textContent = '⚡ CONFIRM POOL EXPANSION';
     modalTitle.style.color = 'var(--cyan)';
-    modalBody.innerHTML = `You are expanding the number pool from <strong>${currentSize}</strong> to <strong>${val}</strong>.<br><br>Existing player allocations will be perfectly preserved. This will simply add ${val - currentSize} new unassigned numbers into rotation.`;
+    modalBody.innerHTML = `You are expanding the pool from <strong>${currentSize}</strong> to <strong>${val}</strong>.<br><br>Existing player allocations will be perfectly preserved. This adds ${val - currentSize} new unassigned numbers into rotation.`;
     modalBtn.textContent = 'YES, EXPAND POOL';
     modalBtn.style.background = 'var(--ch-orange)';
     modalBtn.style.borderColor = 'var(--gold)';
-  } else {
-    // DESTRUCTIVE MODE: Full Reset Warning
-    modalTitle.textContent = '⚠ CONFIRM HARD RESET';
+    modalBtn.style.color = '#ffffff';
+  } else if (actionType === 'wipe') {
+    // Set up the Modal for Destructive Reset
+    modalTitle.textContent = '⚠ CONFIRM DESTRUCTIVE WIPE';
     modalTitle.style.color = 'var(--nasa-red)';
-    modalBody.innerHTML = `This will clear <strong>ALL</strong> existing player number allocations and generate a completely fresh pool of <strong>${val}</strong> numbers.<br><br>All previous player combinations will be permanently invalidated!`;
-    modalBtn.textContent = 'YES, WIPE & RESET';
-    modalBtn.style.background = 'rgba(252,61,33,0.15)';
-    modalBtn.style.borderColor = 'var(--nasa-red)';
+    modalBody.innerHTML = `This will clear <strong>ALL</strong> existing player allocations and generate a fresh pool of <strong>${val}</strong> numbers.<br><br><span style="color:var(--nasa-red);">All previous player combinations will be permanently invalidated!</span>`;
+    modalBtn.textContent = 'YES, WIPE EVERYTHING';
+    modalBtn.style.background = 'var(--nasa-red)';
+    modalBtn.style.borderColor = 'var(--star)';
+    modalBtn.style.color = '#ffffff';
   }
 
+  confirmSizeEl.textContent = val;
   document.getElementById('confirm-modal').classList.add('show');
 }
 
 function closeConfirm() {
   document.getElementById('confirm-modal').classList.remove('show');
   pendingResetSize = null;
+  pendingPoolAction = null;
 }
-
 async function doReset() {
   const size = pendingResetSize;
+  const action = pendingPoolAction;
   closeConfirm();
-  if (!size) return;
+  if (!size || !action) return;
 
-  showStatus('Checking existing pool configuration...');
-  
-  // 1. Fetch current pool configuration to see if we are expanding
-  const { data: currentCfg, error: cfgError } = await db.from('pool_config').select('*').single();
-  if (cfgError) {
-    showStatus(`Failed to fetch current config: ${cfgError.message}`, true);
-    return;
-  }
+  if (action === 'expand') {
+    // ───────────────── PATH A: SAFE EXPANSION ─────────────────
+    showStatus('Fetching current pool configurations...');
+    const { data: currentCfg, error: cfgError } = await db.from('pool_config').select('*').single();
+    if (cfgError) {
+      showStatus(`Failed to fetch current config: ${cfgError.message}`, true);
+      return;
+    }
 
-  const currentNumbers = currentCfg?.pool_numbers || [];
-  const isExpanding = size > currentNumbers.length;
-
-  if (isExpanding) {
-    showStatus(`Expanding pool from ${currentNumbers.length} to ${size}...`);
+    const currentNumbers = currentCfg?.pool_numbers || [];
+    showStatus(`Injecting new numbers up to target size ${size}...`);
     
-    // Create a pool of all possible numbers (1-999) excluding what we already have
     const existingSet = new Set(currentNumbers);
     const availableNumbers = [];
     for (let i = 1; i <= 999; i++) {
-      if (!existingSet.has(i)) {
-        availableNumbers.push(i);
-      }
+      if (!existingSet.has(i)) availableNumbers.push(i);
     }
 
-    // Shuffle only the available remaining numbers using Fisher-Yates
+    // Shuffle available remainder pool
     for (let i = availableNumbers.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [availableNumbers[i], availableNumbers[j]] = [availableNumbers[j], availableNumbers[i]];
     }
 
-    // Take just enough numbers to reach the new target size
     const numbersNeeded = size - currentNumbers.length;
     const additionalNumbers = availableNumbers.slice(0, numbersNeeded);
-    
-    // Combine old numbers with new numbers
     const newPool = [...currentNumbers, ...additionalNumbers];
 
-    // Update pool_config WITHOUT deleting allocations
     const upRes = await adminFetch(`/rest/v1/pool_config?id=eq.1`, {
       method: 'PATCH',
       body: JSON.stringify({
@@ -893,12 +908,11 @@ async function doReset() {
       showStatus(`Failed to expand pool (${upRes.status}): ${upRes.error}`, true);
       return;
     }
+    showStatus(`Pool expanded successfully! Added ${numbersNeeded} new numbers. Allocations preserved.`);
 
-    showStatus(`Pool expanded! Added ${numbersNeeded} new numbers. Total size: ${size}. Existing allocations preserved.`);
-
-  } else {
-    // 2. Destructive Path: If shrinking or same size, do a complete clean wipe
-    showStatus('Performing clean pool reset...');
+  } else if (action === 'wipe') {
+    // ───────────────── PATH B: DESTRUCTIVE WIPE ─────────────────
+    showStatus('Purging allocations and rebuilding fresh pool...');
     
     const all = Array.from({length: 999}, (_, i) => i + 1);
     for (let i = all.length - 1; i > 0; i--) {
@@ -907,14 +921,13 @@ async function doReset() {
     }
     const pool = all.slice(0, size);
 
-    // Wipe allocations completely
+    // Delete everything
     const delRes = await adminFetch(`/rest/v1/allocations?id=neq.00000000-0000-0000-0000-000000000000`, { method: 'DELETE' });
     if (!delRes.ok) {
-      showStatus(`Failed to clear allocations (${delRes.status}): ${delRes.error}`, true);
+      showStatus(`Wipe failed: (${delRes.status}): ${delRes.error}`, true);
       return;
     }
 
-    // Save completely new pool
     const upRes = await adminFetch(`/rest/v1/pool_config?id=eq.1`, {
       method: 'PATCH',
       body: JSON.stringify({
@@ -925,14 +938,11 @@ async function doReset() {
     });
 
     if (!upRes.ok) {
-      showStatus(`Failed to save pool (${upRes.status}): ${upRes.error}`, true);
+      showStatus(`Failed to save new pool structure (${upRes.status}): ${upRes.error}`, true);
       return;
     }
-
-    showStatus(`Pool completely reset! New size: ${size}. Previous allocations cleared.`);
+    showStatus(`Full clear complete! Generated a new isolated pool of ${size} numbers.`);
   }
-
-  showStatus(`Pool reset! New size: ${size}. ${size} numbers generated. Lock can now be set.`);
   await logAudit('pool_reset', `Pool reset to size ${size}`);
   await loadPoolConfig();
 }
