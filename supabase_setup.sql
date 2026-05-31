@@ -38,6 +38,15 @@ CREATE TABLE IF NOT EXISTS allocations (
   created_at    timestamptz DEFAULT now()
 );
 
+-- Audit log (admin action history)
+CREATE TABLE IF NOT EXISTS audit_log (
+  id         uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  actor      text NOT NULL,       -- staff email
+  action     text NOT NULL,       -- 'pool_reset' | 'remove_score' | 'toggle_skip'
+  detail     text,                -- human-readable description
+  created_at timestamptz DEFAULT now()
+);
+
 -- ── 2. Seed initial pool (100 numbers from 001-999) ─────────────
 -- Run this once to create the first pool.
 -- Admin portal reset will regenerate this any time.
@@ -64,10 +73,14 @@ CREATE INDEX IF NOT EXISTS idx_scores_leaderboard
 CREATE INDEX IF NOT EXISTS idx_allocations_combo
   ON allocations (combination);
 
+CREATE INDEX IF NOT EXISTS idx_audit_log_created
+  ON audit_log (created_at DESC);
+
 -- ── 4. Row Level Security ────────────────────────────────────────
 ALTER TABLE scores      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pool_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE allocations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_log   ENABLE ROW LEVEL SECURITY;
 
 -- scores: public read (non-removed only)
 CREATE POLICY "public leaderboard read"
@@ -119,6 +132,17 @@ CREATE POLICY "admin allocation read"
 -- allocations: authenticated staff can delete (during pool reset)
 CREATE POLICY "admin allocation delete"
   ON allocations FOR DELETE
+  TO authenticated
+  USING (true);
+
+-- audit_log: authenticated staff can insert and read
+CREATE POLICY "admin audit insert"
+  ON audit_log FOR INSERT
+  TO authenticated
+  WITH CHECK (true);
+
+CREATE POLICY "admin audit read"
+  ON audit_log FOR SELECT
   TO authenticated
   USING (true);
 

@@ -536,6 +536,24 @@
       </div>
     </div>
 
+    <!-- Audit log -->
+    <div class="card card-full">
+      <div class="card-title">
+        <span>📋 ADMIN ACTIVITY LOG</span>
+        <button class="btn-secondary btn-sm" onclick="loadAuditLog()">↻ REFRESH</button>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="lb-table">
+          <thead>
+            <tr><th>TIME</th><th>STAFF</th><th>ACTION</th><th>DETAIL</th></tr>
+          </thead>
+          <tbody id="audit-tbody">
+            <tr><td colspan="4" class="empty-state">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -632,7 +650,10 @@ async function doLogout() {
   document.getElementById('login-screen').style.display = 'flex';
 }
 
+let currentUserEmail = '';
+
 function showAdmin(email) {
+  currentUserEmail = email;
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('admin-screen').style.display = 'block';
   document.getElementById('user-email-display').textContent = email;
@@ -646,7 +667,7 @@ db.auth.onAuthStateChange((event, session) => {
 
 // ── Load everything ──────────────────────────────────────────────
 async function loadAll() {
-  await Promise.all([loadPoolConfig(), loadLeaderboard()]);
+  await Promise.all([loadPoolConfig(), loadLeaderboard(), loadAuditLog()]);
 }
 
 // ── Pool config ──────────────────────────────────────────────────
@@ -686,6 +707,7 @@ async function toggleSkip() {
   });
   if (!res.ok) { showStatus(`Failed to toggle skip (${res.status}): ${res.error}`, true); return; }
   showStatus(`Skip button ${next ? 'enabled — players can skip' : 'disabled — players must play'}.`);
+  logAudit('toggle_skip', `Skip ${next ? 'enabled' : 'disabled'}`);
   await loadPoolConfig();
 }
 
@@ -759,6 +781,7 @@ async function doReset() {
   if (!upRes.ok) { showStatus(`Failed to save pool (${upRes.status}): ${upRes.error}`, true); return; }
 
   showStatus(`Pool reset! New size: ${size}. ${size} numbers generated. Lock can now be set.`);
+  logAudit('pool_reset', `Pool reset to size ${size}`);
   await loadPoolConfig();
 }
 
@@ -808,7 +831,34 @@ async function removeScore(id, nick, combo = '') {
     await adminFetch(`/rest/v1/allocations?combination=eq.${encodeURIComponent(combo)}`, { method: 'DELETE' });
   }
   showStatus(`"${nick}" removed from leaderboard.`);
+  logAudit('remove_score', `Removed player "${nick}" (combo: ${combo || 'none'})`);
   loadLeaderboard();
+}
+
+// ── Audit log ─────────────────────────────────────────────────────
+function logAudit(action, detail) {
+  adminFetch('/rest/v1/audit_log', {
+    method: 'POST',
+    headers: { 'Prefer': 'return=minimal' },
+    body: JSON.stringify({ actor: currentUserEmail, action, detail }),
+  }).catch(() => {});
+}
+
+async function loadAuditLog() {
+  const res = await adminFetch('/rest/v1/audit_log?order=created_at.desc&limit=50');
+  const tbody = document.getElementById('audit-tbody');
+  if (!tbody) return;
+  if (!res.ok || !res.data?.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No activity yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = res.data.map(r => `
+    <tr>
+      <td>${new Date(r.created_at).toLocaleTimeString()}</td>
+      <td style="color:var(--muted)">${r.actor}</td>
+      <td style="color:var(--cyan);letter-spacing:1px">${r.action}</td>
+      <td>${r.detail || '—'}</td>
+    </tr>`).join('');
 }
 
 // ── Helpers ───────────────────────────────────────────────────────
