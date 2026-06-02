@@ -615,9 +615,7 @@
   </div>
 
   <div id="controls">
-    <button class="ctrl-btn" id="left-btn">◀ LEFT</button>
-    <button class="ctrl-btn fire" id="fire-btn">▲ FIRE</button>
-    <button class="ctrl-btn" id="right-btn">RIGHT ▶</button>
+    <button class="ctrl-btn fire" id="fire-btn" style="width:100%">▲ FIRE</button>
   </div>
 
   <!-- Start overlay -->
@@ -648,7 +646,7 @@
     <button class="pixel-btn" id="start-btn">LAUNCH MISSION</button>
     <button class="pixel-btn secondary" id="skip-btn" style="font-size:6px;opacity:0.8">SKIP — JUST GET MY COMBO</button>
     <div class="controls-hint">
-      TAP CONTROLS · OR USE ← → SPACE<br>
+      DRAG TO MOVE · TAP FIRE · (PC: ← → SPACE)<br>
       DODGE WASTE · COLLECT COINS · ANSWER FINOPS<br>
       VISIT CLOUDHEALTH BOOTH AT FINOPSX TO CLAIM
     </div>
@@ -697,7 +695,9 @@ let savingsBonus = 0;              // leftover-budget bonus on win (for HUD/win 
 let deathReason = 'BUDGET DEPLETED'; // shown on game-over
 let spendTags = [];                // floating "+$X" / "-$X" texts
 const keys = {};
-const touch = { left: false, right: false, fire: false };
+const touch = { fire: false };
+let dragActive = false;     // a pointer is dragging the ship
+let dragTargetX = null;     // canvas-space x the ship eases toward (null = no target)
 
 // Game objects
 let asteroids = [];
@@ -764,6 +764,7 @@ const ship = {
   x: 0, y: 0,
   w: 22, h: 38,
   speed: 4,
+  maxStep: 7,        // max px/frame the ship glides toward a drag target
   bullets: [],
   shootCooldown: 0,
   thrustAnim: 0,
@@ -774,6 +775,8 @@ const ship = {
 function initShip() {
   ship.x = W / 2;
   ship.y = H - 70;
+  dragActive = false;
+  dragTargetX = null;
 }
 
 // ── FinOps Events Database ────────────────────────────────────────
@@ -2056,10 +2059,16 @@ function updateGame() {
 
   if (ship.invincible > 0) ship.invincible--;
 
-  // Movement
-  const moving = keys['ArrowLeft'] || keys['ArrowRight'] || touch.left || touch.right;
-  if (keys['ArrowLeft'] || touch.left) ship.x = Math.max(15, ship.x - ship.speed);
-  if (keys['ArrowRight'] || touch.right) ship.x = Math.min(W - 15, ship.x + ship.speed);
+  // Movement — keyboard (PC) nudges, pointer drag (mobile + PC mouse) glides
+  if (keys['ArrowLeft'])  ship.x = Math.max(15, ship.x - ship.speed);
+  if (keys['ArrowRight']) ship.x = Math.min(W - 15, ship.x + ship.speed);
+  if (dragActive && dragTargetX !== null) {
+    const dx = dragTargetX - ship.x;
+    ship.x += Math.max(-ship.maxStep, Math.min(ship.maxStep, dx));
+    ship.x = Math.max(15, Math.min(W - 15, ship.x));
+  }
+  const moving = keys['ArrowLeft'] || keys['ArrowRight'] ||
+                 (dragActive && dragTargetX !== null && Math.abs(dragTargetX - ship.x) > 1);
 
   // Shoot — each bullet is a compute call, debited from budget
   if ((keys[' '] || keys['Space'] || touch.fire) && ship.shootCooldown <= 0 && budget > BULLET_COST) {
@@ -2773,21 +2782,36 @@ document.addEventListener('keydown', e => {
 });
 document.addEventListener('keyup', e => { keys[e.key] = false; });
 
-// Touch controls
-function setupTouch(btnId, prop) {
-  const btn = document.getElementById(btnId);
-  const press = (e) => { e.preventDefault(); touch[prop] = true; btn.classList.add('pressed'); };
-  const release = (e) => { e.preventDefault(); touch[prop] = false; btn.classList.remove('pressed'); };
-  btn.addEventListener('touchstart', press, { passive: false });
-  btn.addEventListener('touchend', release, { passive: false });
-  btn.addEventListener('touchcancel', release, { passive: false });
-  btn.addEventListener('mousedown', press);
-  btn.addEventListener('mouseup', release);
-  btn.addEventListener('mouseleave', release);
+// Drag-to-move: pointer events cover touch, mouse, and pen with one path.
+// Map a pointer event to canvas-space x (CSS size may differ from logical W).
+function pointerX(e) {
+  const r = canvas.getBoundingClientRect();
+  return (e.clientX - r.left) * (W / r.width);
 }
-setupTouch('left-btn', 'left');
-setupTouch('right-btn', 'right');
-setupTouch('fire-btn', 'fire');
+canvas.addEventListener('pointerdown', (e) => {
+  if (state !== 'playing') return;
+  dragActive = true;
+  dragTargetX = pointerX(e);
+  try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+  e.preventDefault();
+}, { passive: false });
+canvas.addEventListener('pointermove', (e) => {
+  if (dragActive) { dragTargetX = pointerX(e); e.preventDefault(); }
+}, { passive: false });
+function endDrag() { dragActive = false; }
+canvas.addEventListener('pointerup', endDrag);
+canvas.addEventListener('pointercancel', endDrag);
+
+// FIRE button — pointer events (touch + mouse + pen)
+(function setupFire() {
+  const btn = document.getElementById('fire-btn');
+  const press = (e) => { e.preventDefault(); touch.fire = true; btn.classList.add('pressed'); };
+  const release = (e) => { e.preventDefault(); touch.fire = false; btn.classList.remove('pressed'); };
+  btn.addEventListener('pointerdown', press);
+  btn.addEventListener('pointerup', release);
+  btn.addEventListener('pointercancel', release);
+  btn.addEventListener('pointerleave', release);
+})();
 
 document.getElementById('start-btn').addEventListener('click', restartGame);
 
