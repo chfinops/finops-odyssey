@@ -295,6 +295,44 @@
 
   #event-modal.show { display: flex; }
 
+  /* Pause button (during play) + pause overlay */
+  #pause-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 45;
+    display: none;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 10px;
+    padding: 8px 10px;
+    background: rgba(11,33,71,0.85);
+    color: var(--star);
+    border: 2px solid var(--cyan);
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  #pause-btn:active { background: var(--cyan); color: var(--bg); }
+
+  #pause-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 60;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    background: rgba(2,6,20,0.9);
+  }
+  #pause-overlay.show { display: flex; }
+  #pause-overlay h2 {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 18px;
+    color: var(--gold);
+    letter-spacing: 2px;
+    margin: 0;
+  }
+
   /* Question display at top of screen */
   #question-display {
     position: absolute;
@@ -475,8 +513,8 @@
   }
   .nick-input:focus { outline: none; border-color: var(--gold); }
   .nick-input::placeholder {
-    font-size: 6px;
-    letter-spacing: 0.5px;
+    font-size: 4.5px;
+    letter-spacing: 0;
     color: rgba(200,216,232,0.6);
   }
   
@@ -576,6 +614,13 @@
   <div id="canvas-container">
     <canvas id="game"></canvas>
     <div id="wave-announce"></div>
+
+    <button id="pause-btn" aria-label="Pause game">⏸</button>
+    <div id="pause-overlay">
+      <h2>⏸ PAUSED</h2>
+      <button class="pixel-btn" id="resume-btn" style="width:170px">RESUME</button>
+      <button class="pixel-btn secondary" id="exit-btn" style="width:170px">EXIT TO START</button>
+    </div>
 
     <div id="event-modal">
       <div class="event-icon" id="event-icon">⚠</div>
@@ -677,6 +722,7 @@ window.addEventListener('orientationchange', resizeCanvas);
 // ── State ──────────────────────────────────────────────────────────
 const STARTING_BUDGET = 1000;
 let state = 'idle'; // idle | playing | dead | won
+let paused = false; // game paused via pause button / Esc
 let score = 0, budget = STARTING_BUDGET, efficiency = 80, phase = 1;
 let frame = 0;
 let phaseProgress = 0;
@@ -2027,7 +2073,10 @@ function startGameEndAnimation(type) {
   gameEndAnimation = true;
   gameEndTimer = 300; // 5 seconds at 60fps
   gameEndType = type;
-  
+  paused = false;
+  document.getElementById('pause-overlay').classList.remove('show');
+  document.getElementById('pause-btn').style.display = 'none';
+
   if (type === 'death') {
     state = 'dead';
     // Clear all game objects for clean death animation
@@ -2468,7 +2517,7 @@ function render() {
     drawParticles();
     drawSpendTags();
 
-    if (state === 'playing') updateGame();
+    if (state === 'playing' && !paused) updateGame();
   }
 
   requestAnimationFrame(render);
@@ -2765,6 +2814,9 @@ function restartGame() {
   initShip();
   ship.bullets = []; ship.shootCooldown = 0; ship.invincible = 0; ship.savingsBuff = 0;
   state = 'playing';
+  paused = false;
+  document.getElementById('pause-overlay').classList.remove('show');
+  document.getElementById('pause-btn').style.display = 'block';
   updatePhase();
   document.getElementById('budget-bar').classList.remove('crit');
   document.getElementById('overlay').style.display = 'none';
@@ -2779,8 +2831,32 @@ function restartGame() {
 document.addEventListener('keydown', e => {
   keys[e.key] = true;
   if (e.key === ' ') e.preventDefault();
+  if ((e.key === 'Escape' || e.key === 'p' || e.key === 'P') && state === 'playing' && !gameEndAnimation) {
+    paused ? resumeGame() : pauseGame();
+  }
 });
 document.addEventListener('keyup', e => { keys[e.key] = false; });
+
+// ── Pause / Resume / Exit ──────────────────────────────────────────
+function pauseGame() {
+  if (state !== 'playing' || paused || gameEndAnimation) return;
+  paused = true;
+  dragActive = false;            // drop stale input so resume doesn't yank
+  touch.fire = false;
+  document.getElementById('fire-btn').classList.remove('pressed');
+  document.getElementById('pause-overlay').classList.add('show');
+}
+function resumeGame() {
+  if (!paused) return;
+  paused = false;
+  document.getElementById('pause-overlay').classList.remove('show');
+}
+function exitToStart() {
+  location.reload(); // back to the pristine start page
+}
+document.getElementById('pause-btn').addEventListener('click', pauseGame);
+document.getElementById('resume-btn').addEventListener('click', resumeGame);
+document.getElementById('exit-btn').addEventListener('click', exitToStart);
 
 // Drag-to-move: pointer events cover touch, mouse, and pen with one path.
 // Map a pointer event to canvas-space x (CSS size may differ from logical W).
