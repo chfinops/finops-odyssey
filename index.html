@@ -300,20 +300,16 @@
 
   /* Pause button (during play) + pause overlay */
   #pause-btn {
-    position: absolute;
-    top: 6px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 45;
     display: none;
     font-family: 'Press Start 2P', monospace;
-    font-size: 14px;
-    padding: 10px 14px;
-    background: rgba(11,33,71,0.85);
+    font-size: 12px;
+    padding: 6px 10px;
+    background: rgba(11,33,71,0.6);
     color: var(--star);
     border: 2px solid var(--cyan);
     cursor: pointer;
     touch-action: manipulation;
+    flex-shrink: 0;
   }
   #pause-btn:active { background: var(--cyan); color: var(--bg); }
 
@@ -610,16 +606,18 @@
 
 <div id="game-wrapper">
   <div id="title-bar">
-    <span class="ch-logo">CLOUDHEALTH</span>
+    <div style="display:flex;flex-direction:column;gap:1px">
+      <span class="ch-logo">CLOUDHEALTH</span>
+      <span style="font-size:5px;letter-spacing:1px;color:rgba(255,255,255,0.7)">FINOPSX 2026</span>
+    </div>
     <span id="phase-label">PHASE 1 · PRE-LAUNCH</span>
-    <span style="font-size:5px">FINOPSX 2026</span>
+    <button id="pause-btn" aria-label="Pause game">⏸</button>
   </div>
 
   <div id="canvas-container">
     <canvas id="game"></canvas>
     <div id="wave-announce"></div>
 
-    <button id="pause-btn" aria-label="Pause game">⏸</button>
     <div id="pause-overlay">
       <h2>⏸ PAUSED</h2>
       <button class="pixel-btn" id="resume-btn" style="width:170px">RESUME</button>
