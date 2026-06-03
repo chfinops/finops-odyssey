@@ -600,6 +600,7 @@
   .how-to-row.avoid   .lbl { color: var(--nasa-red); }
   .how-to-row.collect .lbl { color: var(--green); }
   .how-to-row.answer  .lbl { color: var(--cyan); }
+  .how-to-row.accuracy .lbl { color: var(--ch-blue); }
   .how-to-row.win     .lbl { color: var(--gold); }
 
   @media (max-height: 700px) {
@@ -678,10 +679,10 @@
     <h1>FINOPS<br>ODYSSEY</h1>
     <div class="subtitle">QUEST FOR LUNAR SAVINGS</div>
     <div class="brief">
-      THIS MONTH'S CLOUD BUDGET: $1000K<br>
+      THIS MONTH'S CLOUD BUDGET: $1M<br>
       EVERY SHOT, HIT &amp; BAD CALL SPENDS.<br>
       COLLECT SAVINGS. ANSWER FINOPS WISELY.<br>
-      REACH THE MOON BEFORE THE MONTH BURNS OUT.
+      REACH THE MOON BEFORE THE BUDGET BURNS OUT.
     </div>
     <div class="coin-badges">
       <span class="coin-badge">$ VISIBILITY</span>
@@ -690,13 +691,15 @@
     </div>
     <div class="how-to">
       <div class="how-to-title">★ HOW TO PLAY ★</div>
-      <div class="how-to-row mission"><span class="ico">🎯</span><span class="lbl">MISSION</span><span class="txt">Land before $1000K runs out</span></div>
-      <div class="how-to-row budget"><span class="ico">💰</span><span class="lbl">BUDGET</span><span class="txt">Always draining. Every action spends</span></div>
-      <div class="how-to-row shoot"><span class="ico">🚀</span><span class="lbl">SHOOT</span><span class="txt">Asteroids = waste. Each shot -$2</span></div>
-      <div class="how-to-row avoid"><span class="ico">⚠️</span><span class="lbl">AVOID</span><span class="txt">Asteroid hit -$75 · Wrong call -$300</span></div>
-      <div class="how-to-row collect"><span class="ico">💎</span><span class="lbl">COLLECT</span><span class="txt">Coins refund: V/G +$30 · Savings +$60</span></div>
-      <div class="how-to-row answer"><span class="ico">🧠</span><span class="lbl">ANSWER</span><span class="txt">Shoot correct asteroid (20 hits) +$150 · wrong -$340</span></div>
-      <div class="how-to-row win"><span class="ico">🏆</span><span class="lbl">WIN</span><span class="txt">Land with budget left = bonus + prize</span></div>
+      <div style="font-size:6px;color:rgba(200,216,232,0.7);text-align:center;margin-bottom:4px;letter-spacing:1px">⏱️ ESTIMATED PLAY TIME: ~2 MINUTES</div>
+      <div class="how-to-row mission"><span class="ico">🎯</span><span class="lbl">MISSION</span><span class="txt">Land safely before your $1M budget runs out</span></div>
+      <div class="how-to-row budget"><span class="ico">💰</span><span class="lbl">BUDGET</span><span class="txt">Constantly draining. Every action costs money</span></div>
+      <div class="how-to-row shoot"><span class="ico">🚀</span><span class="lbl">SHOOT</span><span class="txt">Destroy waste asteroids. Each shot costs $2</span></div>
+      <div class="how-to-row avoid"><span class="ico">⚠️</span><span class="lbl">AVOID</span><span class="txt">Getting hit by asteroids costs $75 · Wrong answers cost $300</span></div>
+      <div class="how-to-row collect"><span class="ico">💎</span><span class="lbl">COLLECT</span><span class="txt">Earn coins: Visibility(V) +$30 · Governance(G) +$30 · Savings($) +$60</span></div>
+      <div class="how-to-row answer"><span class="ico">🧠</span><span class="lbl">ANSWER</span><span class="txt">Correct FinOps answers earn $150 · Wrong answers cost $340</span></div>
+      <div class="how-to-row accuracy"><span class="ico">🎯</span><span class="lbl">ACCURACY</span><span class="txt">Hit rate tracked: Good aim saves money & boosts final score</span></div>
+      <div class="how-to-row win"><span class="ico">🏆</span><span class="lbl">WIN</span><span class="txt">Land with budget left: 5x budget = score bonus + real prize!</span></div>
     </div>
     <button class="pixel-btn" id="start-btn">LAUNCH MISSION</button>
     <button class="pixel-btn secondary" id="skip-btn" style="font-size:6px;opacity:0.8">SKIP — JUST GET MY COMBO</button>
