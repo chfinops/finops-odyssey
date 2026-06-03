@@ -112,17 +112,20 @@
     touch-action: none;
   }
 
-  /* HUD */
-  #hud {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
+  /* HUD — overlaid in the canvas corners */
+  .hud-corner {
+    position: absolute;
+    top: 6px;
+    z-index: 8;
+    display: flex;
+    flex-direction: column;
     gap: 6px;
-    padding: 6px 8px;
-    background: rgba(11,61,145,0.7);
-    border-top: 1px solid var(--cyan);
     font-size: 6px;
-    flex-shrink: 0;
+    pointer-events: none;                                /* never intercept taps */
+    text-shadow: 0 0 4px var(--bg), 0 0 4px var(--bg);   /* legible over starfield */
   }
+  #hud-left  { left: 6px;  align-items: flex-start; }
+  #hud-right { right: 6px; align-items: flex-end; text-align: right; }
 
   .hud-block {
     display: flex;
@@ -137,7 +140,7 @@
   .hud-value.orange { color: var(--ch-orange); }
 
   .bar-wrap {
-    width: 80px;
+    width: 64px;
     height: 8px;
     background: rgba(255,255,255,0.1);
     border: 1px solid var(--cyan);
@@ -154,18 +157,25 @@
   /* Controls panel */
   #controls {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 4px;
-    padding: 6px 6px calc(6px + env(safe-area-inset-bottom)) 6px;
+    grid-template-columns: 2fr 1fr;
+    gap: 8px;
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom)) 8px;
     background: var(--bg2);
     border-top: 1px solid var(--cyan);
     flex-shrink: 0;
   }
 
+  /* left thumb zone: LEFT + RIGHT side by side */
+  .ctrl-move {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
   .ctrl-btn {
     font-family: 'Press Start 2P', monospace;
-    font-size: 8px;
-    padding: 14px 4px;
+    font-size: 13px;
+    padding: 36px 4px;
     background: var(--nasa-blue);
     color: var(--star);
     border: 2px solid var(--cyan);
@@ -183,6 +193,7 @@
   }
 
   .ctrl-btn.fire {
+    height: 100%;
     background: var(--ch-orange);
     border-color: var(--gold);
   }
@@ -294,6 +305,41 @@
   }
 
   #event-modal.show { display: flex; }
+
+  /* Pause button (during play) + pause overlay */
+  #pause-btn {
+    display: none;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 12px;
+    padding: 6px 10px;
+    background: rgba(11,33,71,0.6);
+    color: var(--star);
+    border: 2px solid var(--cyan);
+    cursor: pointer;
+    touch-action: manipulation;
+    flex-shrink: 0;
+  }
+  #pause-btn:active { background: var(--cyan); color: var(--bg); }
+
+  #pause-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 60;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    background: rgba(2,6,20,0.9);
+  }
+  #pause-overlay.show { display: flex; }
+  #pause-overlay h2 {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 18px;
+    color: var(--gold);
+    letter-spacing: 2px;
+    margin: 0;
+  }
 
   /* Question display at top of screen */
   #question-display {
@@ -475,8 +521,8 @@
   }
   .nick-input:focus { outline: none; border-color: var(--gold); }
   .nick-input::placeholder {
-    font-size: 6px;
-    letter-spacing: 0.5px;
+    font-size: 6.5px;
+    letter-spacing: 0;
     color: rgba(200,216,232,0.6);
   }
   
@@ -558,7 +604,7 @@
 
   @media (max-height: 700px) {
     #overlay h1 { font-size: 18px; }
-    .ctrl-btn { padding: 10px 4px; font-size: 7px; }
+    .ctrl-btn { padding: 24px 4px; font-size: 11px; }
     .how-to { padding: 6px 8px; gap: 3px; }
     .how-to-row { font-size: 5px; }
   }
@@ -568,14 +614,41 @@
 
 <div id="game-wrapper">
   <div id="title-bar">
-    <span class="ch-logo">CLOUDHEALTH</span>
+    <div style="display:flex;flex-direction:column;gap:1px">
+      <span class="ch-logo">CLOUDHEALTH</span>
+      <span style="font-size:5px;letter-spacing:1px;color:rgba(255,255,255,0.7)">FINOPSX 2026</span>
+    </div>
     <span id="phase-label">PHASE 1 · PRE-LAUNCH</span>
-    <span style="font-size:5px">FINOPSX 2026</span>
+    <button id="pause-btn" aria-label="Pause game">⏸</button>
   </div>
 
   <div id="canvas-container">
     <canvas id="game"></canvas>
     <div id="wave-announce"></div>
+
+    <div id="pause-overlay">
+      <h2>⏸ PAUSED</h2>
+      <button class="pixel-btn" id="resume-btn" style="width:170px">RESUME</button>
+      <button class="pixel-btn secondary" id="exit-btn" style="width:170px">EXIT</button>
+    </div>
+
+    <div id="hud-left" class="hud-corner">
+      <div class="hud-block">
+        <span class="hud-label">BUDGET</span>
+        <div class="bar-wrap"><div class="bar-fill" id="budget-bar" style="width:100%;background:var(--gold)"></div></div>
+        <span class="hud-value gold" id="budget-display">$1000K</span>
+      </div>
+      <div class="hud-block">
+        <span class="hud-label">ACCURACY</span>
+        <div class="bar-wrap"><div class="bar-fill" id="eff-bar" style="width:0%;background:var(--cyan)"></div></div>
+        <span class="hud-value" id="eff-display">0%</span>
+      </div>
+    </div>
+    <div id="hud-right" class="hud-corner">
+      <span class="hud-label">ROI SCORE</span>
+      <span class="hud-value" id="score-display">000000</span>
+      <span class="hud-label" style="color:var(--ch-orange)">PHASE <span id="phase-num">1</span>/3</span>
+    </div>
 
     <div id="event-modal">
       <div class="event-icon" id="event-icon">⚠</div>
@@ -592,32 +665,12 @@
     </div>
   </div>
 
-  <div id="hud">
-    <div class="hud-block">
-      <span class="hud-label">BUDGET</span>
-      <div class="bar-wrap"><div class="bar-fill" id="budget-bar" style="width:100%;background:var(--gold)"></div></div>
-      <span class="hud-value gold" id="budget-display">$1000K</span>
-    </div>
-    <div class="hud-block">
-      <span class="hud-label">ROI SCORE</span>
-      <span class="hud-value" id="score-display">000000</span>
-      <span class="hud-label" style="color:var(--ch-orange)">PHASE <span id="phase-num">1</span>/3</span>
-    </div>
-    <div class="hud-block">
-      <span class="hud-label">ACCURACY</span>
-      <div class="bar-wrap"><div class="bar-fill" id="eff-bar" style="width:0%;background:var(--cyan)"></div></div>
-      <span class="hud-value" id="eff-display">0%</span>
-    </div>
-    <div class="hud-block" style="grid-column:1/-1;border-top:1px solid rgba(0,229,255,0.2);padding-top:4px;flex-direction:row;justify-content:center;gap:8px;align-items:center">
-      <span class="hud-label">CHANCE OF WINNING:</span>
-      <span class="hud-value gold" id="odds-display">1 IN 100</span>
-    </div>
-  </div>
-
   <div id="controls">
-    <button class="ctrl-btn" id="left-btn">◀ LEFT</button>
+    <div class="ctrl-move">
+      <button class="ctrl-btn" id="left-btn">◀</button>
+      <button class="ctrl-btn" id="right-btn">▶</button>
+    </div>
     <button class="ctrl-btn fire" id="fire-btn">▲ FIRE</button>
-    <button class="ctrl-btn" id="right-btn">RIGHT ▶</button>
   </div>
 
   <!-- Start overlay -->
@@ -648,7 +701,7 @@
     <button class="pixel-btn" id="start-btn">LAUNCH MISSION</button>
     <button class="pixel-btn secondary" id="skip-btn" style="font-size:6px;opacity:0.8">SKIP — JUST GET MY COMBO</button>
     <div class="controls-hint">
-      TAP CONTROLS · OR USE ← → SPACE<br>
+      TAP LEFT · RIGHT · FIRE · (PC: ← → SPACE)<br>
       DODGE WASTE · COLLECT COINS · ANSWER FINOPS<br>
       VISIT CLOUDHEALTH BOOTH AT FINOPSX TO CLAIM
     </div>
@@ -679,6 +732,7 @@ window.addEventListener('orientationchange', resizeCanvas);
 // ── State ──────────────────────────────────────────────────────────
 const STARTING_BUDGET = 1000;
 let state = 'idle'; // idle | playing | dead | won
+let paused = false; // game paused via pause button / Esc
 let score = 0, budget = STARTING_BUDGET, efficiency = 80, phase = 1;
 let frame = 0;
 let phaseProgress = 0;
@@ -2024,7 +2078,10 @@ function startGameEndAnimation(type) {
   gameEndAnimation = true;
   gameEndTimer = 300; // 5 seconds at 60fps
   gameEndType = type;
-  
+  paused = false;
+  document.getElementById('pause-overlay').classList.remove('show');
+  document.getElementById('pause-btn').style.display = 'none';
+
   if (type === 'death') {
     state = 'dead';
     // Clear all game objects for clean death animation
@@ -2056,9 +2113,9 @@ function updateGame() {
 
   if (ship.invincible > 0) ship.invincible--;
 
-  // Movement
+  // Movement — keyboard (PC) + on-screen LEFT/RIGHT buttons (mobile)
   const moving = keys['ArrowLeft'] || keys['ArrowRight'] || touch.left || touch.right;
-  if (keys['ArrowLeft'] || touch.left) ship.x = Math.max(15, ship.x - ship.speed);
+  if (keys['ArrowLeft']  || touch.left)  ship.x = Math.max(15, ship.x - ship.speed);
   if (keys['ArrowRight'] || touch.right) ship.x = Math.min(W - 15, ship.x + ship.speed);
 
   // Shoot — each bullet is a compute call, debited from budget
@@ -2459,7 +2516,7 @@ function render() {
     drawParticles();
     drawSpendTags();
 
-    if (state === 'playing') updateGame();
+    if (state === 'playing' && !paused) updateGame();
   }
 
   requestAnimationFrame(render);
@@ -2659,7 +2716,7 @@ async function promptNicknameAndNumber(sc, showCombo, isSkip = false) {
     <div style="font-size:7px; color:var(--cyan); text-align:center; margin-bottom:6px">
       ENTER CALLSIGN FOR LEADERBOARD
     </div>
-    <input class="nick-input" id="nick-input" maxlength="8" placeholder="NO EMAIL OR REAL NAMES - ALIAS ONLY" />
+    <input class="nick-input" id="nick-input" maxlength="8" placeholder="NO EMAIL OR REAL NAMES" />
     <button class="pixel-btn" id="submit-nick" style="margin-top:12px; width:100%; max-width:200px;">
       SUBMIT SCORE
     </button>
@@ -2756,6 +2813,9 @@ function restartGame() {
   initShip();
   ship.bullets = []; ship.shootCooldown = 0; ship.invincible = 0; ship.savingsBuff = 0;
   state = 'playing';
+  paused = false;
+  document.getElementById('pause-overlay').classList.remove('show');
+  document.getElementById('pause-btn').style.display = 'block';
   updatePhase();
   document.getElementById('budget-bar').classList.remove('crit');
   document.getElementById('overlay').style.display = 'none';
@@ -2770,24 +2830,47 @@ function restartGame() {
 document.addEventListener('keydown', e => {
   keys[e.key] = true;
   if (e.key === ' ') e.preventDefault();
+  if ((e.key === 'Escape' || e.key === 'p' || e.key === 'P') && state === 'playing' && !gameEndAnimation) {
+    paused ? resumeGame() : pauseGame();
+  }
 });
 document.addEventListener('keyup', e => { keys[e.key] = false; });
 
-// Touch controls
-function setupTouch(btnId, prop) {
-  const btn = document.getElementById(btnId);
-  const press = (e) => { e.preventDefault(); touch[prop] = true; btn.classList.add('pressed'); };
-  const release = (e) => { e.preventDefault(); touch[prop] = false; btn.classList.remove('pressed'); };
-  btn.addEventListener('touchstart', press, { passive: false });
-  btn.addEventListener('touchend', release, { passive: false });
-  btn.addEventListener('touchcancel', release, { passive: false });
-  btn.addEventListener('mousedown', press);
-  btn.addEventListener('mouseup', release);
-  btn.addEventListener('mouseleave', release);
+// ── Pause / Resume / Exit ──────────────────────────────────────────
+function pauseGame() {
+  if (state !== 'playing' || paused || gameEndAnimation) return;
+  paused = true;
+  touch.left = touch.right = touch.fire = false;  // drop held buttons
+  ['left-btn','right-btn','fire-btn'].forEach(id =>
+    document.getElementById(id).classList.remove('pressed'));
+  document.getElementById('pause-overlay').classList.add('show');
 }
-setupTouch('left-btn', 'left');
-setupTouch('right-btn', 'right');
-setupTouch('fire-btn', 'fire');
+function resumeGame() {
+  if (!paused) return;
+  paused = false;
+  document.getElementById('pause-overlay').classList.remove('show');
+}
+function exitToStart() {
+  location.reload(); // back to the pristine start page
+}
+document.getElementById('pause-btn').addEventListener('click', pauseGame);
+document.getElementById('resume-btn').addEventListener('click', resumeGame);
+document.getElementById('exit-btn').addEventListener('click', exitToStart);
+
+// On-screen buttons — pointer events cover touch, mouse, and pen with one path.
+// Hold to keep the flag set; release/cancel/leave clears it.
+function holdButton(id, prop) {
+  const btn = document.getElementById(id);
+  const press   = (e) => { e.preventDefault(); touch[prop] = true;  btn.classList.add('pressed'); };
+  const release = (e) => { e.preventDefault(); touch[prop] = false; btn.classList.remove('pressed'); };
+  btn.addEventListener('pointerdown', press);
+  btn.addEventListener('pointerup', release);
+  btn.addEventListener('pointercancel', release);
+  btn.addEventListener('pointerleave', release);
+}
+holdButton('left-btn', 'left');
+holdButton('right-btn', 'right');
+holdButton('fire-btn', 'fire');
 
 document.getElementById('start-btn').addEventListener('click', restartGame);
 
