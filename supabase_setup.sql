@@ -188,14 +188,18 @@ DECLARE
     'TURD','FART','POOP',
     'STUPID','IDIOT','MORON',
     'SEX','PORN','NUDE','BONER',
-    'CLOUDABILITY','APPTIO','FLEXERA','VANTAGE','CLOUDZERO'
+    'CLOUDABILITY','APPTIO','FLEXERA','VANTAGE','CLOUDZERO',
+    'ANAL','DILDO','SKANK','DOUCHE','DOUCHEBAG',
+    'TARD','TRANNY','HOMO',
+    'TITTY','TITTIES',
+    'ORGASM','ORGY'
   ];
   w text;
 BEGIN
   normalized := upper(
     translate(NEW.nickname,
-      '4@3!|1057$',
-      'AAEIIIOSTS')
+      '4@3!|1057$8',
+      'AAEIIIOSTS B')
   );
   FOREACH w IN ARRAY bad_words LOOP
     IF normalized LIKE '%' || w || '%' THEN

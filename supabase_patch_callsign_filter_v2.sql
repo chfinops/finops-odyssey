@@ -1,16 +1,13 @@
 -- ══════════════════════════════════════════════════════
--- FinOps Odyssey · Add callsign profanity trigger
--- Run on an EXISTING deployment (already ran supabase_setup.sql).
--- Safe to re-run: uses CREATE OR REPLACE + DROP IF EXISTS.
+-- FinOps Odyssey · Callsign filter patch v2
+-- Adds missing words + fixes 8→B leet mapping.
+-- Run on an EXISTING deployment via Supabase SQL Editor.
+-- Safe to re-run.
 -- ══════════════════════════════════════════════════════
 
--- Drop old trigger first (idempotent re-run safety)
 DROP TRIGGER IF EXISTS trg_callsign_profanity ON scores;
 DROP FUNCTION IF EXISTS check_callsign_profanity();
 
--- Normalises leet-speak then blocks bad words before INSERT commits.
--- RAISE EXCEPTION 'callsign_blocked' is caught by index.html and shown
--- to the player as an invalid-callsign error.
 CREATE OR REPLACE FUNCTION check_callsign_profanity()
 RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
@@ -26,7 +23,7 @@ DECLARE
     'PUSSY','PUSS',
     'NIGGA','NIGGER',
     'FAGGOT','FAGOT','FAG',
-    'RETARD',
+    'RETARD','TARD',
     'WHORE','SLUT',
     'PRICK','BASTARD',
     'DAMN','CRAP',
@@ -42,14 +39,15 @@ DECLARE
     'TURD','FART','POOP',
     'STUPID','IDIOT','MORON',
     'SEX','PORN','NUDE','BONER',
-    'CLOUDABILITY','APPTIO','FLEXERA','VANTAGE','CLOUDZERO',
     'ANAL','DILDO','SKANK','DOUCHE','DOUCHEBAG',
-    'TARD','TRANNY','HOMO',
+    'TRANNY','HOMO',
     'TITTY','TITTIES',
-    'ORGASM','ORGY'
+    'ORGASM','ORGY',
+    'CLOUDABILITY','APPTIO','FLEXERA','VANTAGE','CLOUDZERO'
   ];
   w text;
 BEGIN
+  -- Normalise leet-speak: 4→A @→A 3→E !→I |→I 1→I 0→O 5→S 7→T $→S 8→B
   normalized := upper(
     translate(NEW.nickname,
       '4@3!|1057$8',
