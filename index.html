@@ -2565,6 +2565,10 @@ const BAD_WORDS = [
   'TURD','FART','POOP',
   'STUPID','IDIOT','MORON',
   'SEX','PORN','NUDE','BONER',
+  'ANAL','DILDO','SKANK','DOUCHE','DOUCHEBAG',
+  'TARD','TRANNY','HOMO',
+  'TITTY','TITTIES',
+  'ORGASM','ORGY',
 ];
 
 function normalizeCallsign(s) {
@@ -2628,14 +2632,16 @@ async function allocateCombinationNumber() {
 // ── Leaderboard ──────────────────────────────────────────────────
 async function saveScore(nick, sc, ph, eff, combo = null) {
   if (!db) return;
-  try {
-    await db.from('scores').insert({
-      nickname: nick, score: sc,
-      phase_reached: ph, efficiency: eff,
-      removed: false,
-      ...(combo && { combination: combo })
-    });
-  } catch(e) { console.warn('Score save failed:', e); }
+  const { error } = await db.from('scores').insert({
+    nickname: nick, score: sc,
+    phase_reached: ph, efficiency: eff,
+    removed: false,
+    ...(combo && { combination: combo })
+  });
+  if (error) {
+    console.warn('Score save failed:', error);
+    if (error.message && error.message.includes('callsign_blocked')) throw new Error('callsign_blocked');
+  }
 }
 
 async function fetchLeaderboard() {
@@ -2769,7 +2775,18 @@ async function promptNicknameAndNumber(sc, showCombo, isSkip = false) {
 
       // Allocate combo first so it can be stored in the score row (1 INSERT, no UPDATE)
       const combo = await allocateCombinationNumber();
-      await saveScore(nick, sc, finalPhase, finalEff, combo);
+      try {
+        await saveScore(nick, sc, finalPhase, finalEff, combo);
+      } catch(e) {
+        if (e.message === 'callsign_blocked') {
+          input.value = '';
+          input.placeholder = 'CHOOSE ANOTHER';
+          input.focus();
+          btn.textContent = 'SUBMIT SCORE';
+          btn.disabled = false;
+          return;
+        }
+      }
 
       if (showCombo) {
         const lb = await fetchLeaderboard();
