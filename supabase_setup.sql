@@ -152,7 +152,69 @@ CREATE POLICY "admin audit read"
   TO authenticated
   USING (true);
 
--- ── 5. Done ──────────────────────────────────────────────────────
+-- ── 5. Callsign profanity trigger ───────────────────────────────
+-- Enforces the bad-word list server-side so clients cannot bypass it.
+-- Normalises leet-speak (4→A, 3→E, 1→I, 0→O, $→S, 5→S, 7→T) then
+-- checks each word. RAISE EXCEPTION aborts the INSERT with the message
+-- 'callsign_blocked' which index.html catches and shows to the player.
+CREATE OR REPLACE FUNCTION check_callsign_profanity()
+RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+  normalized text;
+  bad_words text[] := ARRAY[
+    'FUCK','FUK','FUCC','FCK','FVCK',
+    'SHIT','SHYT',
+    'ASS','AZZ','ARSE',
+    'CUNT','CVNT',
+    'DICK','DIK','DYCK',
+    'COCK','COK',
+    'BITCH','BYTCH','BIATCH',
+    'PUSSY','PUSS',
+    'NIGGA','NIGGER',
+    'FAGGOT','FAGOT','FAG',
+    'RETARD',
+    'WHORE','SLUT',
+    'PRICK','BASTARD',
+    'DAMN','CRAP',
+    'NAZI','RAPE','RAPIST',
+    'KILL','HITLER','JIHAD',
+    'PENIS','VAGINA','BOOB','TITS','TIT',
+    'CUMSHOT','CUM','JIZZ',
+    'MASTURBAT','HANDJOB','BLOWJOB',
+    'NWORD','KIKE','SPIC','CHINK','WETBACK',
+    'SUCKS','SUCK','BALLS','PISS',
+    'FCUK',
+    'WANK','WANKER','TWAT','KNOB','KNOBHEAD','BOLLOCKS','TOSSER',
+    'TURD','FART','POOP',
+    'STUPID','IDIOT','MORON',
+    'SEX','PORN','NUDE','BONER',
+    'CLOUDABILITY','APPTIO','FLEXERA','VANTAGE','CLOUDZERO',
+    'ANAL','DILDO','SKANK','DOUCHE','DOUCHEBAG',
+    'TARD','TRANNY','HOMO',
+    'TITTY','TITTIES',
+    'ORGASM','ORGY'
+  ];
+  w text;
+BEGIN
+  normalized := upper(
+    translate(NEW.nickname,
+      '4@3!|1057$8',
+      'AAEIIIOSTS B')
+  );
+  FOREACH w IN ARRAY bad_words LOOP
+    IF normalized LIKE '%' || w || '%' THEN
+      RAISE EXCEPTION 'callsign_blocked';
+    END IF;
+  END LOOP;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_callsign_profanity
+  BEFORE INSERT ON scores
+  FOR EACH ROW EXECUTE FUNCTION check_callsign_profanity();
+
+-- ── 6. Done ──────────────────────────────────────────────────────
 -- Next steps:
 --   1. Go to Authentication → Users → Invite staff emails
 --   2. Copy Project URL + publishable key from Settings → API

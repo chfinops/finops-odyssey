@@ -21,6 +21,10 @@ DROP POLICY IF EXISTS "public allocation insert"   ON allocations;
 DROP POLICY IF EXISTS "admin allocation read"      ON allocations;
 DROP POLICY IF EXISTS "admin allocation delete"    ON allocations;
 
+-- Drop callsign trigger + function
+DROP TRIGGER IF EXISTS trg_callsign_profanity ON scores;
+DROP FUNCTION IF EXISTS check_callsign_profanity();
+
 -- Drop tables (CASCADE removes dependent indexes)
 DROP TABLE IF EXISTS audit_log    CASCADE;
 DROP TABLE IF EXISTS allocations  CASCADE;
