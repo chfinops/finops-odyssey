@@ -2611,20 +2611,38 @@ function updateOddsDisplay() {
 // Pick a random number from the pool (duplicates allowed per spec)
 async function allocateCombinationNumber() {
   if (!db) {
-    // local fallback
     return String(Math.floor(Math.random() * poolSize) + 1).padStart(3, '0');
   }
+
   try {
-    // Fetch current pool_size + all pool numbers
-    const { data: cfg } = await db.from('pool_config').select('pool_size, pool_numbers').single();
+    // 1. Fetch the available pool configuration
+    const { data: cfg } = await db.from('pool_config').select('pool_numbers').single();
     if (!cfg) return '???';
-    const pool = cfg.pool_numbers; // array of ints e.g. [42, 137, 291 ...]
-    const picked = pool[Math.floor(Math.random() * pool.length)];
-    // Record allocation
-    await db.from('allocations').insert({ combination: String(picked).padStart(3,'0') });
-    return String(picked).padStart(3, '0');
+    const pool = cfg.pool_numbers;
+
+    // 2. Fetch all combinations that have already been allocated to players
+    const { data: allocatedData } = await db.from('allocations').select('combination');
+    const allocatedCodes = new Set(allocatedData.map(a => parseInt(a.combination, 10)));
+
+    // 3. Filter the pool to find ONLY unassigned numbers
+    const availableNumbers = pool.filter(num => !allocatedCodes.has(num));
+
+    // Fallback: If your event traffic fills the pool, reset or fallback gracefully
+    if (availableNumbers.length === 0) {
+      console.warn("Pool completely exhausted! Handing out a random code fallback.");
+      return String(pool[Math.floor(Math.random() * pool.length)]).padStart(3, '0');
+    }
+
+    // 4. Safely pick a completely unique number from the remaining subset
+    const picked = availableNumbers[Math.floor(Math.random() * availableNumbers.length)];
+    const uniqueComboString = String(picked).padStart(3, '0');
+
+    // 5. Record the allocation to lock it out for the next player
+    await db.from('allocations').insert({ combination: uniqueComboString });
+    return uniqueComboString;
+
   } catch(e) {
-    console.warn('Allocation failed:', e);
+    console.warn('Unique allocation failed, falling back:', e);
     return String(Math.floor(Math.random() * 100) + 1).padStart(3, '0');
   }
 }
