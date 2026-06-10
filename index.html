@@ -2381,9 +2381,6 @@ function resumeGame() {
 function exitToStart() {
   location.reload(); // back to the pristine start page
 }
-document.getElementById('pause-btn').addEventListener('click', pauseGame);
-document.getElementById('resume-btn').addEventListener('click', resumeGame);
-document.getElementById('exit-btn').addEventListener('click', exitToStart);
 
 // On-screen buttons — pointer events cover touch, mouse, and pen with one path.
 // Hold to keep the flag set; release/cancel/leave clears it.
@@ -2396,11 +2393,6 @@ function holdButton(id, prop) {
   btn.addEventListener('pointercancel', release);
   btn.addEventListener('pointerleave', release);
 }
-holdButton('left-btn', 'left');
-holdButton('right-btn', 'right');
-holdButton('fire-btn', 'fire');
-
-document.getElementById('start-btn').addEventListener('click', restartGame);
 
 function skipToCombo() {
   efficiency = 0;
@@ -2415,7 +2407,6 @@ function skipToCombo() {
   `;
   promptNicknameAndNumber(0, true, true);
 }
-document.getElementById('skip-btn').addEventListener('click', skipToCombo);
 
     <p class="plain">
       <a href="https://www.arrow.com/globalecs/en/cloudhealth/" target="_blank" rel="noopener">https://www.arrow.com/globalecs/en/cloudhealth/</a>
