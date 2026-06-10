@@ -2,18 +2,24 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#020409">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script defer src="/_vercel/insights/script.js"></script>
-<title>Thank You · CloudHealth at FinOpsX 2026</title>
+<title>FinOps Odyssey: Quest for Lunar Savings</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Orbitron:wght@700;900&display=swap');
 
   :root {
     --ch-orange: #FF6B1A;
+    --ch-blue: #1E88E5;
+    --nasa-red: #FC3D21;
     --nasa-blue: #0B3D91;
+    --moon: #C8D8E8;
     --gold: #FFB300;
     --cyan: #00E5FF;
+    --green: #39FF14;
     --bg: #020409;
     --bg2: #0a1428;
     --star: #F0F4FF;
@@ -27,14 +33,17 @@
     background: var(--bg);
     font-family: 'Press Start 2P', monospace;
     color: var(--star);
+    overflow: hidden;
     overscroll-behavior: none;
+    user-select: none;
+    -webkit-user-select: none;
   }
 
   body {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 16px;
+    padding: 8px;
   }
 
   /* Background nebula */
@@ -49,79 +58,214 @@
     z-index: -1;
   }
 
-  .card {
+  #game-wrapper {
     position: relative;
     width: 100%;
-    max-width: 440px;
+    max-width: 480px;
+    aspect-ratio: 9 / 16;
+    max-height: 100dvh;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    text-align: center;
-    gap: 20px;
-    padding: 32px 22px;
     border: 2px solid var(--cyan);
     background: var(--bg);
     box-shadow: 0 0 40px rgba(0,229,255,0.3), inset 0 0 80px rgba(2,4,9,0.8);
   }
 
-  .brand { display: flex; flex-direction: column; gap: 4px; }
+  /* Title bar */
+  #title-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    background: linear-gradient(90deg, var(--nasa-blue), var(--ch-orange));
+    border-bottom: 1px solid var(--cyan);
+    font-size: 6px;
+    letter-spacing: 1px;
+    flex-shrink: 0;
+  }
 
   .ch-logo {
     font-family: 'Orbitron', sans-serif;
     font-weight: 900;
-    font-size: 20px;
-    letter-spacing: 3px;
-    color: var(--star);
-    text-shadow: 1px 1px 0 var(--bg), 0 0 16px rgba(0,229,255,0.5);
-  }
-
-  .event {
-    font-size: 7px;
+    font-size: 10px;
     letter-spacing: 2px;
-    color: var(--cyan);
+    color: var(--star);
+    text-shadow: 1px 1px 0 var(--bg);
   }
 
-  h1 {
-    font-size: 18px;
-    line-height: 1.5;
-    color: var(--gold);
-    text-shadow: 0 0 12px rgba(255,179,0,0.4);
+  #phase-label { color: var(--cyan); font-size: 6px; }
+
+  /* Canvas fills middle */
+  #canvas-container {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: var(--bg);
   }
 
-  .msg {
-    font-size: 8px;
-    line-height: 1.9;
-    color: rgba(240,244,255,0.85);
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    touch-action: none;
   }
 
-  .prompt {
-    font-size: 8px;
-    line-height: 1.8;
-    color: var(--cyan);
-    margin-top: 4px;
-  }
-
-  .cta-stack {
+  /* HUD — overlaid in the canvas corners */
+  .hud-corner {
+    position: absolute;
+    top: 6px;
+    z-index: 8;
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    width: 100%;
+    gap: 6px;
+    font-size: 6px;
+    pointer-events: none;                                /* never intercept taps */
+    text-shadow: 0 0 4px var(--bg), 0 0 4px var(--bg);   /* legible over starfield */
+  }
+  #hud-left  { left: 6px;  align-items: flex-start; }
+  #hud-right { right: 6px; align-items: flex-end; text-align: right; }
+
+  .hud-block {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    align-items: center;
+  }
+
+  .hud-label { color: var(--cyan); font-size: 5px; letter-spacing: 1px; }
+  .hud-value { color: var(--green); font-size: 8px; }
+  .hud-value.gold { color: var(--gold); }
+  .hud-value.orange { color: var(--ch-orange); }
+
+  .bar-wrap {
+    width: 64px;
+    height: 8px;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid var(--cyan);
+  }
+  .bar-fill { height: 100%; transition: width 0.2s, background 0.2s; }
+  .bar-fill.crit {
+    animation: pulse-crit 0.5s infinite;
+  }
+  @keyframes pulse-crit {
+    0%, 100% { background: var(--nasa-red); box-shadow: 0 0 4px var(--nasa-red); }
+    50% { background: #FF8888; box-shadow: 0 0 12px var(--nasa-red); }
+  }
+
+  /* Controls panel */
+  #controls {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 8px;
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom)) 8px;
+    background: var(--bg2);
+    border-top: 1px solid var(--cyan);
+    flex-shrink: 0;
+  }
+
+  /* left thumb zone: LEFT + RIGHT side by side */
+  .ctrl-move {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .ctrl-btn {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 13px;
+    padding: 36px 4px;
+    background: var(--nasa-blue);
+    color: var(--star);
+    border: 2px solid var(--cyan);
+    cursor: pointer;
+    transition: all 0.05s;
+    letter-spacing: 1px;
+    touch-action: none;
+  }
+
+  .ctrl-btn:active, .ctrl-btn.pressed {
+    background: var(--cyan);
+    color: var(--bg);
+    transform: scale(0.96);
+    box-shadow: 0 0 10px var(--cyan);
+  }
+
+  .ctrl-btn.fire {
+    height: 100%;
+    background: var(--ch-orange);
+    border-color: var(--gold);
+  }
+  .ctrl-btn.fire:active, .ctrl-btn.fire.pressed {
+    background: var(--gold);
+    color: var(--bg);
+  }
+
+  /* Overlay */
+  #overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(2,4,9,0.95);
+    z-index: 100;
+    padding: 16px;
+    gap: 14px;
+    overflow-y: auto;
+  }
+
+  #overlay h1 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: 2px;
+    text-align: center;
+    background: linear-gradient(180deg, var(--gold), var(--ch-orange));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: 0 0 30px rgba(255,107,26,0.5);
+    line-height: 1.2;
+  }
+
+  #overlay h2 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    color: var(--cyan);
+    text-align: center;
+  }
+
+  .subtitle {
+    font-size: 7px;
+    color: var(--cyan);
+    letter-spacing: 2px;
+    text-align: center;
+    line-height: 1.8;
+  }
+
+  .brief {
+    font-size: 7px;
+    color: rgba(200,216,232,0.8);
+    text-align: center;
+    line-height: 2;
     max-width: 320px;
   }
 
   .pixel-btn {
     font-family: 'Press Start 2P', monospace;
     font-size: 9px;
-    line-height: 1.5;
-    padding: 14px 18px;
+    padding: 14px 22px;
     background: var(--ch-orange);
     color: var(--star);
     border: 2px solid var(--gold);
     cursor: pointer;
-    letter-spacing: 1px;
-    text-decoration: none;
+    letter-spacing: 2px;
     transition: all 0.1s;
-    word-break: break-word;
   }
 
   .pixel-btn:hover, .pixel-btn:active {
@@ -137,53 +281,426 @@
   }
   .pixel-btn.secondary:hover, .pixel-btn.secondary:active {
     background: var(--cyan);
-    color: var(--bg);
-    box-shadow: 0 0 20px var(--cyan);
   }
 
-  .pixel-btn .sub {
-    display: block;
+  .controls-hint {
     font-size: 6px;
+    color: rgba(200,216,232,0.6);
+    text-align: center;
+    line-height: 2.5;
+  }
+
+  /* FinOps event modal */
+  #event-modal {
+    position: absolute;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(2,4,9,0.92);
+    z-index: 50;
+    padding: 16px;
+    gap: 12px;
+  }
+
+  #event-modal.show { display: flex; }
+
+  /* Pause button (during play) + pause overlay */
+  #pause-btn {
+    display: none;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 12px;
+    padding: 6px 10px;
+    background: rgba(11,33,71,0.6);
+    color: var(--star);
+    border: 2px solid var(--cyan);
+    cursor: pointer;
+    touch-action: manipulation;
+    flex-shrink: 0;
+  }
+  #pause-btn:active { background: var(--cyan); color: var(--bg); }
+
+  #pause-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 60;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    background: rgba(2,6,20,0.9);
+  }
+  #pause-overlay.show { display: flex; }
+  #pause-overlay h2 {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 18px;
+    color: var(--gold);
+    letter-spacing: 2px;
+    margin: 0;
+  }
+
+  /* Question display at top of screen */
+  #question-display {
+    position: absolute;
+    top: 20px;
+    left: 0;
+    right: 0;
+    background: rgba(2,4,9,0.95);
+    border: 2px solid var(--cyan);
+    padding: 8px 12px;
+    max-height: 38vh;
+    overflow-y: auto;
+    z-index: 30;
+    display: none;
+    text-align: center;
+  }
+
+  #question-display.show { display: block; }
+
+  .question-icon {
+    font-size: 16px;
+    margin-bottom: 4px;
+  }
+
+  .question-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 9px;
+    font-weight: 900;
+    color: var(--nasa-red);
+    letter-spacing: 1.5px;
+    margin-bottom: 4px;
+  }
+
+  .question-desc {
+    font-size: 9px;
+    color: #fff;
+    line-height: 1.5;
+    margin-bottom: 6px;
+    text-shadow: 0 0 4px rgba(0,0,0,0.9);
+  }
+
+  .question-instruction {
+    font-size: 7px;
+    color: var(--cyan);
     letter-spacing: 1px;
-    margin-top: 6px;
-    opacity: 0.85;
   }
 
-  .plain {
-    font-size: 6px;
+  @media (max-width: 600px) {
+    #question-display {
+      padding: 6px 10px;
+      max-height: 26vh;
+      background: rgba(2,4,9,0.96);
+    }
+    .question-icon        { display: none; }
+    .question-title       { font-size: 8px; letter-spacing: 1px; margin-bottom: 3px; }
+    .question-desc        { font-size: 8px; line-height: 1.3; margin-bottom: 4px; }
+    .question-instruction { font-size: 7px; }
+  }
+
+  .event-icon {
+    font-size: 32px;
+    margin-bottom: 4px;
+  }
+
+  .event-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 13px;
+    font-weight: 900;
+    color: var(--nasa-red);
+    text-align: center;
+    letter-spacing: 2px;
+  }
+
+  .event-desc {
+    font-size: 7px;
+    color: var(--star);
+    text-align: center;
     line-height: 2;
-    color: rgba(200,216,232,0.65);
-    letter-spacing: 1px;
+    max-width: 340px;
   }
-  .plain a { color: var(--cyan); text-decoration: none; }
+
+  .event-options {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+    max-width: 340px;
+  }
+
+  .event-option {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 7px;
+    padding: 12px 10px;
+    background: var(--bg2);
+    color: var(--star);
+    border: 1px solid var(--cyan);
+    cursor: pointer;
+    text-align: left;
+    line-height: 1.6;
+    transition: all 0.1s;
+  }
+
+  .event-option:hover, .event-option:active {
+    background: var(--nasa-blue);
+    border-color: var(--gold);
+    transform: translateX(4px);
+  }
+
+  .feedback-correct, .feedback-wrong {
+    font-size: 8px;
+    padding: 12px;
+    border: 2px solid;
+    text-align: center;
+    line-height: 2;
+    max-width: 340px;
+  }
+  .feedback-correct { color: var(--green); border-color: var(--green); background: rgba(57,255,20,0.1); }
+  .feedback-wrong { color: var(--nasa-red); border-color: var(--nasa-red); background: rgba(252,61,33,0.1); }
+
+  /* Wave announce */
+  #wave-announce {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 12px;
+    color: var(--gold);
+    text-shadow: 0 0 15px var(--gold);
+    pointer-events: none;
+    opacity: 0;
+    z-index: 20;
+    text-align: center;
+    line-height: 2;
+    transition: opacity 0.5s;
+  }
+
+  /* Leaderboard */
+  .leaderboard {
+    width: 100%;
+    max-width: 320px;
+    border: 1px solid var(--cyan);
+    background: rgba(11,61,145,0.3);
+    padding: 10px;
+  }
+
+  .lb-header {
+    font-size: 7px;
+    color: var(--gold);
+    text-align: center;
+    margin-bottom: 8px;
+    letter-spacing: 2px;
+  }
+
+  .lb-row {
+    display: grid;
+    grid-template-columns: 24px 1fr 70px;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 7px;
+    border-bottom: 1px dashed rgba(0,229,255,0.2);
+  }
+
+  .lb-row.you { color: var(--gold); }
+  .lb-rank { color: var(--cyan); }
+  .lb-score { text-align: right; color: var(--green); }
+
+  /* Nickname input */
+  .nick-input {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 10px;
+    padding: 12px;
+    background: var(--bg);
+    color: var(--gold);
+    border: 2px solid var(--cyan);
+    text-align: center;
+    width: 200px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+  .nick-input:focus { outline: none; border-color: var(--gold); }
+  .nick-input::placeholder {
+    font-size: 6.5px;
+    letter-spacing: 0;
+    color: rgba(200,216,232,0.6);
+  }
+  
+.nick-input, #submit-nick {
+    box-sizing: border-box !important; /* Prevents padding from breaking width */
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+    text-align: center;
+}
+
+.nick-input {
+    width: 100%;
+    max-width: 200px;
+    height: 40px;
+    background: rgba(0,0,0,0.5);
+    border: 2px solid var(--cyan);
+    color: white;
+    font-family: inherit;
+}
+
+#submit-nick.pixel-btn {
+    min-height: 44px; /* Proper touch target height for mobile */
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+  /* Coin badge */
+  .coin-badges {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin: 4px 0;
+  }
+  .coin-badge {
+    font-size: 6px;
+    padding: 4px 8px;
+    background: rgba(255,179,0,0.15);
+    border: 1px solid var(--gold);
+    color: var(--gold);
+  }
+
+  /* How-to-play panel on start screen */
+  .how-to {
+    width: 100%;
+    max-width: 340px;
+    border: 2px solid var(--cyan);
+    background: rgba(11,61,145,0.25);
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .how-to-title {
+    font-size: 7px;
+    text-align: center;
+    color: var(--gold);
+    letter-spacing: 2px;
+    margin-bottom: 2px;
+  }
+  .how-to-row {
+    display: grid;
+    grid-template-columns: 16px 60px 1fr;
+    gap: 4px;
+    align-items: center;
+    font-size: 6px;
+    line-height: 1.6;
+  }
+  .how-to-row .ico { font-size: 10px; text-align: center; }
+  .how-to-row .lbl { letter-spacing: 1px; }
+  .how-to-row .txt { color: rgba(240,244,255,0.85); }
+  .how-to-row.mission .lbl { color: var(--cyan); }
+  .how-to-row.budget  .lbl { color: var(--gold); }
+  .how-to-row.shoot   .lbl { color: var(--ch-orange); }
+  .how-to-row.avoid   .lbl { color: var(--nasa-red); }
+  .how-to-row.collect .lbl { color: var(--green); }
+  .how-to-row.answer  .lbl { color: var(--cyan); }
+  .how-to-row.accuracy .lbl { color: var(--ch-blue); }
+  .how-to-row.win     .lbl { color: var(--gold); }
+
+  @media (max-height: 700px) {
+    #overlay h1 { font-size: 18px; }
+    .ctrl-btn { padding: 24px 4px; font-size: 11px; }
+    .how-to { padding: 6px 8px; gap: 3px; }
+    .how-to-row { font-size: 5px; }
+  }
 </style>
 </head>
 <body>
-  <main class="card">
-    <div class="brand">
-      <span class="ch-logo">CloudHealth</span>
-      <span style="font-size:7px;letter-spacing:2px;color:rgba(240,244,255,0.75)">by Broadcom</span>
-      <span class="event">FINOPSX 2026</span>
+
+<div id="game-wrapper">
+  <div id="title-bar">
+    <div style="display:flex;flex-direction:column;gap:1px">
+      <span class="ch-logo">CLOUDHEALTH</span>
+      <span style="font-size:5px;letter-spacing:1px;color:rgba(255,255,255,0.7)">FINOPSX 2026</span>
+    </div>
+    <span id="phase-label">PHASE 1 · PRE-LAUNCH</span>
+    <button id="pause-btn" aria-label="Pause game">⏸</button>
+  </div>
+
+  <div id="canvas-container">
+    <canvas id="game"></canvas>
+    <div id="wave-announce"></div>
+
+    <div id="pause-overlay">
+      <h2>⏸ PAUSED</h2>
+      <button class="pixel-btn" id="resume-btn" style="width:170px">RESUME</button>
+      <button class="pixel-btn secondary" id="exit-btn" style="width:170px">EXIT</button>
     </div>
 
-    <h1>THANK YOU FOR ATTENDING</h1>
-
-    <p class="msg">
-      It was great to meet you at the CloudHealth booth.
-      Thanks for playing FinOps Odyssey and stopping by to have a chat!
-    </p>
-
-    <p class="prompt">Want to learn more about CloudHealth offerings?</p>
-
-    <div class="cta-stack">
-      <a class="pixel-btn" href="https://www.arrow.com/globalecs/en/cloudhealth/" target="_blank" rel="noopener">
-        VISIT CLOUDHEALTH
-      </a>
-      <a class="pixel-btn secondary" href="/game.html">
-        ▶ PLAY FINOPS ODYSSEY
-      </a>
+    <div id="hud-left" class="hud-corner">
+      <div class="hud-block">
+        <span class="hud-label">BUDGET</span>
+        <div class="bar-wrap"><div class="bar-fill" id="budget-bar" style="width:100%;background:var(--gold)"></div></div>
+        <span class="hud-value gold" id="budget-display">$1000K</span>
+      </div>
+      <div class="hud-block">
+        <span class="hud-label">ACCURACY</span>
+        <div class="bar-wrap"><div class="bar-fill" id="eff-bar" style="width:0%;background:var(--cyan)"></div></div>
+        <span class="hud-value" id="eff-display">0%</span>
+      </div>
+    </div>
+    <div id="hud-right" class="hud-corner">
+      <span class="hud-label">ROI SCORE</span>
+      <span class="hud-value" id="score-display">000000</span>
+      <span class="hud-label" style="color:var(--ch-orange)">PHASE <span id="phase-num">1</span>/3</span>
     </div>
 
+    <div id="event-modal">
+      <div class="event-icon" id="event-icon">⚠</div>
+      <div class="event-title" id="event-title">FinOps Event</div>
+      <div class="event-desc" id="event-desc">Description</div>
+      <div class="event-options" id="event-options"></div>
+    </div>
+
+    <div id="question-display">
+      <div class="question-icon" id="question-icon">⚠</div>
+      <div class="question-title" id="question-title">FinOps Challenge</div>
+      <div class="question-desc" id="question-desc">Question description</div>
+      <div class="question-instruction">SHOOT THE CORRECT ASTEROID! EACH TAKES 20 HITS!</div>
+    </div>
+  </div>
+
+  <div id="controls">
+    <div class="ctrl-move">
+      <button class="ctrl-btn" id="left-btn">◀</button>
+      <button class="ctrl-btn" id="right-btn">▶</button>
+    </div>
+    <button class="ctrl-btn fire" id="fire-btn">▲ FIRE</button>
+  </div>
+
+  <!-- Start overlay -->
+  <div id="overlay">
+    <h1>FINOPS<br>ODYSSEY</h1>
+    <div class="subtitle">QUEST FOR LUNAR SAVINGS</div>
+    <div class="brief">
+      THIS MONTH'S CLOUD BUDGET: $1M<br>
+      EVERY SHOT, HIT &amp; BAD CALL SPENDS.<br>
+      COLLECT SAVINGS. ANSWER FINOPS WISELY.<br>
+      REACH THE MOON BEFORE THE BUDGET BURNS OUT.
+    </div>
+    <div class="coin-badges">
+      <span class="coin-badge">$ VISIBILITY</span>
+      <span class="coin-badge">$ GOVERNANCE</span>
+      <span class="coin-badge">$ SAVINGS</span>
+    </div>
+    <div class="how-to">
+      <div class="how-to-title">★ HOW TO PLAY ★</div>
+      <div style="font-size:6px;color:rgba(200,216,232,0.7);text-align:center;margin-bottom:4px;letter-spacing:1px">⏱️ ESTIMATED PLAY TIME: ~2 MINUTES</div>
+      <div class="how-to-row mission"><span class="ico">🎯</span><span class="lbl">MISSION</span><span class="txt">Land safely before your $1M budget runs out</span></div>
+      <div class="how-to-row budget"><span class="ico">💰</span><span class="lbl">BUDGET</span><span class="txt">Constantly draining. Every action costs money</span></div>
+      <div class="how-to-row shoot"><span class="ico">🚀</span><span class="lbl">SHOOT</span><span class="txt">Destroy waste asteroids. Each shot costs $2</span></div>
+      <div class="how-to-row avoid"><span class="ico">⚠️</span><span class="lbl">AVOID</span><span class="txt">Getting hit by asteroids costs $75 · Wrong answers cost $300</span></div>
+      <div class="how-to-row collect"><span class="ico">💎</span><span class="lbl">COLLECT</span><span class="txt">Earn coins: Visibility(V) +$30 · Governance(G) +$30 · Savings($) +$60</span></div>
+      <div class="how-to-row answer"><span class="ico">🧠</span><span class="lbl">ANSWER</span><span class="txt">Correct FinOps answers earn $150 · Wrong answers cost $340</span></div>
+      <div class="how-to-row accuracy"><span class="ico">🎯</span><span class="lbl">ACCURACY</span><span class="txt">Hit rate tracked: Good aim saves money & boosts final score</span></div>
+      <div class="how-to-row win"><span class="ico">🏆</span><span class="lbl">WIN</span><span class="txt">Land with budget left: 5x budget = score bonus + real prize!</span></div>
+    </div>
     <button class="pixel-btn" id="start-btn">LAUNCH MISSION</button>
     <button class="pixel-btn secondary" id="skip-btn" style="font-size:6px;opacity:0.8">SKIP — JUST GET MY COMBO</button>
     <div class="controls-hint">
@@ -2094,38 +2611,20 @@ function updateOddsDisplay() {
 // Pick a random number from the pool (duplicates allowed per spec)
 async function allocateCombinationNumber() {
   if (!db) {
+    // local fallback
     return String(Math.floor(Math.random() * poolSize) + 1).padStart(3, '0');
   }
-
   try {
-    // 1. Fetch the available pool configuration
-    const { data: cfg } = await db.from('pool_config').select('pool_numbers').single();
+    // Fetch current pool_size + all pool numbers
+    const { data: cfg } = await db.from('pool_config').select('pool_size, pool_numbers').single();
     if (!cfg) return '???';
-    const pool = cfg.pool_numbers;
-
-    // 2. Fetch all combinations that have already been allocated to players
-    const { data: allocatedData } = await db.from('allocations').select('combination');
-    const allocatedCodes = new Set(allocatedData.map(a => parseInt(a.combination, 10)));
-
-    // 3. Filter the pool to find ONLY unassigned numbers
-    const availableNumbers = pool.filter(num => !allocatedCodes.has(num));
-
-    // Fallback: If your event traffic fills the pool, reset or fallback gracefully
-    if (availableNumbers.length === 0) {
-      console.warn("Pool completely exhausted! Handing out a random code fallback.");
-      return String(pool[Math.floor(Math.random() * pool.length)]).padStart(3, '0');
-    }
-
-    // 4. Safely pick a completely unique number from the remaining subset
-    const picked = availableNumbers[Math.floor(Math.random() * availableNumbers.length)];
-    const uniqueComboString = String(picked).padStart(3, '0');
-
-    // 5. Record the allocation to lock it out for the next player
-    await db.from('allocations').insert({ combination: uniqueComboString });
-    return uniqueComboString;
-
+    const pool = cfg.pool_numbers; // array of ints e.g. [42, 137, 291 ...]
+    const picked = pool[Math.floor(Math.random() * pool.length)];
+    // Record allocation
+    await db.from('allocations').insert({ combination: String(picked).padStart(3,'0') });
+    return String(picked).padStart(3, '0');
   } catch(e) {
-    console.warn('Unique allocation failed, falling back:', e);
+    console.warn('Allocation failed:', e);
     return String(Math.floor(Math.random() * 100) + 1).padStart(3, '0');
   }
 }
@@ -2417,9 +2916,17 @@ function skipToCombo() {
 }
 document.getElementById('skip-btn').addEventListener('click', skipToCombo);
 
-    <p class="plain">
-      <a href="https://www.arrow.com/globalecs/en/cloudhealth/" target="_blank" rel="noopener">https://www.arrow.com/globalecs/en/cloudhealth/</a>
-    </p>
-  </main>
+// ── Boot ──────────────────────────────────────────────────────────
+async function boot() {
+  resizeCanvas();
+  initBackground();
+  initShip();
+  updatePhase();
+  await fetchPoolConfig(); // get live pool size + odds from Supabase
+  render();
+}
+boot();
+</script>
+<script defer src="/_vercel/speed-insights/script.js"></script>
 </body>
 </html>
