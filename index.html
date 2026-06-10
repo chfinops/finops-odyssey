@@ -184,6 +184,2239 @@
       </a>
     </div>
 
+    <button class="pixel-btn" id="start-btn">LAUNCH MISSION</button>
+    <button class="pixel-btn secondary" id="skip-btn" style="font-size:6px;opacity:0.8">SKIP — JUST GET MY COMBO</button>
+    <div class="controls-hint">
+      TAP LEFT · RIGHT · FIRE · (PC: ← → SPACE)<br>
+      DODGE WASTE · COLLECT COINS · ANSWER FINOPS<br>
+      VISIT CLOUDHEALTH BOOTH AT FINOPSX TO CLAIM
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ── Setup ──────────────────────────────────────────────────────────
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let W = 0, H = 0, DPR = 1;
+
+function resizeCanvas() {
+  const r = canvas.getBoundingClientRect();
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = r.width * DPR;
+  canvas.height = r.height * DPR;
+  W = r.width;
+  H = r.height;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+}
+window.addEventListener('resize', resizeCanvas);
+window.addEventListener('orientationchange', resizeCanvas);
+
+// ── State ──────────────────────────────────────────────────────────
+const STARTING_BUDGET = 1000;
+let state = 'idle'; // idle | playing | dead | won
+let paused = false; // game paused via pause button / Esc
+let score = 0, budget = STARTING_BUDGET, efficiency = 80, phase = 1;
+let frame = 0;
+let phaseProgress = 0;
+const PHASE_GOAL = 2700; // frames per phase before lunar approach (~2:00 total round)
+
+// ── Budget-as-fuel tunables ──
+const BULLET_COST = 2;             // each shot = compute call
+const PHASE_TRANSITION_COST = 50;  // commitment cost entering new phase
+const BURN_RATE_BASE = 2;          // baseline always-on drain (per ~60-frame tick)
+const COIN_REFUND = { visibility: 30, governance: 30, savings: 60 };
+const QUIZ_REFUND = 150;
+const QUIZ_PENALTY = 300;
+const ASTEROID_PENALTY = 75;
+const SAVINGS_BUFF_FRAMES = 300;   // governance coin: ~5s reduced burn
+let savingsBonus = 0;              // leftover-budget bonus on win (for HUD/win screen)
+let deathReason = 'BUDGET DEPLETED'; // shown on game-over
+let spendTags = [];                // floating "+$X" / "-$X" texts
+const keys = {};
+const touch = { left: false, right: false, fire: false };
+
+// Game objects
+let asteroids = [];
+let answerAsteroids = [];
+let coins = [];
+let bullets = [];
+let particles = [];
+let explosions = [];
+
+// Question state
+let currentQuestion = null;
+let questionActive = false;
+let questionHitsRequired = 20;
+let questionWarning = false;
+let questionWarningTimer = 0;
+let rocketMoving = false;
+let rocketMoveTimer = 0;
+let rocketCrashed = false;
+let rocketCrashTimer = 0;
+let gameEndAnimation = false;
+let gameEndTimer = 0;
+let gameEndType = ''; // 'victory' or 'death'
+
+// Wave management
+let waveActive = false;
+let waveClearTimer = 0;
+let questionsAnsweredThisGame = 0;
+let waveTimer = 0;
+let waveAsteroidsSpawned = 0;
+let waveCompleted = false;
+const WAVE_DURATION = 1440; // 24 seconds at 60fps
+const MAX_ASTEROIDS_PER_WAVE = 12;
+
+// Accuracy tracking
+let bulletsShot = 0;
+let bulletsHit = 0;
+
+// FinOps coin types
+const COIN_TYPES = ['visibility', 'governance', 'savings'];
+let coinsCollected = { visibility: 0, governance: 0, savings: 0 };
+
+// Stars background
+let stars = [];
+let nebulae = [];
+
+function initBackground() {
+  stars = Array.from({length: 80}, () => ({
+    x: Math.random() * W,
+    y: Math.random() * H,
+    r: Math.random() * 1.5 + 0.3,
+    speed: Math.random() * 0.5 + 0.1,
+    twinkle: Math.random() * Math.PI * 2,
+  }));
+  nebulae = Array.from({length: 4}, () => ({
+    x: Math.random() * W,
+    y: Math.random() * H,
+    r: 50 + Math.random() * 80,
+    h: [200, 25, 280, 180][Math.floor(Math.random() * 4)],
+  }));
+}
+
+// ── Ship (CloudHealth Rocket) ─────────────────────────────────────
+const ship = {
+  x: 0, y: 0,
+  w: 22, h: 38,
+  speed: 4,
+  bullets: [],
+  shootCooldown: 0,
+  thrustAnim: 0,
+  invincible: 0,
+  savingsBuff: 0,
+};
+
+function initShip() {
+  ship.x = W / 2;
+  ship.y = H - 70;
+}
+
+// ── FinOps Events Database ────────────────────────────────────────
+// Full 20-question pool. 5 picked random per game.
+// Pillars: INFORM (visibility/allocation), OPTIMIZE (waste/rightsizing), OPERATE (governance/maturity)
+const FINOPS_EVENT_POOL = [
+  // ── INFORM ────────────────────────────────────────────────────
+  {
+    pillar: 'INFORM', icon: '🛰', title: 'ROGUE SATELLITE',
+    desc: 'Untagged resources spike 40%. Finance cannot trace spend by team.',
+    options: [
+      { text: 'Enforce tagging policy + cost allocation', correct: true,
+        feedback: 'CORRECT! Tagging is FinOps foundation. Enables chargeback + accountability.' },
+      { text: 'Terminate everything untagged immediately', correct: false,
+        feedback: 'TOO AGGRESSIVE. Kills production. Visibility comes before action.' },
+      { text: 'Ignore until next quarterly review', correct: false,
+        feedback: 'WASTE COMPOUNDS. Untagged spend grows fast. Budget hit.' },
+    ]
+  },
+  {
+    pillar: 'INFORM', icon: '🏢', title: 'SHARED ACCOUNT CHAOS',
+    desc: '3 teams share one AWS account. No way to split costs at month-end.',
+    options: [
+      { text: 'Showback/chargeback via account tagging', correct: true,
+        feedback: 'CORRECT! Tag-based allocation maps spend to owners. Foundation of accountability.' },
+      { text: 'Split bill equally across all teams', correct: false,
+        feedback: 'UNFAIR. Heavy users escape, light users overpay. Drives wrong behavior.' },
+      { text: 'Move all teams to one cost center', correct: false,
+        feedback: 'KILLS ACCOUNTABILITY. No incentive to optimize. FinOps fails.' },
+    ]
+  },
+  {
+    pillar: 'INFORM', icon: '📊', title: 'SPEND BLINDSPOT',
+    desc: 'CFO needs real-time spend visibility across AWS, Azure, GCP. Now.',
+    options: [
+      { text: 'CloudHealth Perspectives multi-cloud dashboard', correct: true,
+        feedback: 'CORRECT! Perspectives unifies multi-cloud spend. Single pane of glass.' },
+      { text: 'Export CSVs from each provider monthly', correct: false,
+        feedback: 'TOO SLOW. By month-end, waste already happened. Need real-time.' },
+      { text: 'Build custom dashboards from scratch', correct: false,
+        feedback: 'REINVENT WHEEL. Months of dev time. Tool exists already.' },
+    ]
+  },
+  {
+    pillar: 'INFORM', icon: '📉', title: 'RI COVERAGE COLLAPSE',
+    desc: 'Reserved Instance coverage dropped to 20%. On-demand spend climbing.',
+    options: [
+      { text: 'Analyze usage patterns + buy RIs for steady-state', correct: true,
+        feedback: 'CORRECT! Match RIs to baseline. 30-72% savings on covered hours.' },
+      { text: 'Buy max RIs to cover everything', correct: false,
+        feedback: 'OVER-COMMIT RISK. Stranded capacity if usage drops. Wasted commitment.' },
+      { text: 'Wait until next year to buy', correct: false,
+        feedback: 'BURNING MONEY. Every day on on-demand = lost savings.' },
+    ]
+  },
+  {
+    pillar: 'INFORM', icon: '💼', title: 'BUDGET vs ACTUAL',
+    desc: 'Finance asks for cloud budget vs actual report. Engineering has no answer.',
+    options: [
+      { text: 'CloudHealth Budget Alerts + Reporting', correct: true,
+        feedback: 'CORRECT! Auto-alerts at 50/75/100% budget. Finance + Eng aligned.' },
+      { text: 'Eyeball provider console once a month', correct: false,
+        feedback: 'TOO LATE. Anomalies invisible until billing day. Reactive = expensive.' },
+      { text: 'Email the dev team to slow down', correct: false,
+        feedback: 'KILLS VELOCITY. Wrong lever. Need data + automation.' },
+    ]
+  },
+  // ── OPTIMIZE ──────────────────────────────────────────────────
+  {
+    pillar: 'OPTIMIZE', icon: '⚡', title: 'OVERSIZED INSTANCE WAVE',
+    desc: 'EC2 CPU at 6% utilization for 90 days. Big instances. Bigger bill.',
+    options: [
+      { text: 'Right-size based on utilization data', correct: true,
+        feedback: 'CORRECT! Right-sizing recovers 30-50% on overprovisioned compute.' },
+      { text: 'Wait for cloud provider price cut', correct: false,
+        feedback: 'HOPE IS NOT A STRATEGY. Waste continues. Bleeds budget.' },
+      { text: 'Add more monitoring tools', correct: false,
+        feedback: 'ANALYSIS PARALYSIS. More tools, no action. Cost stays.' },
+    ]
+  },
+  {
+    pillar: 'OPTIMIZE', icon: '🔥', title: 'IDLE RESOURCE BURN',
+    desc: 'Dev environments running 24/7. Weekend + night = 70% pure waste.',
+    options: [
+      { text: 'Auto-shutdown schedule for non-prod', correct: true,
+        feedback: 'CORRECT! Schedules cut dev/test costs 65%. Run only when needed.' },
+      { text: 'Move dev to a cheaper region', correct: false,
+        feedback: 'PARTIAL FIX. Still wastes 24/7. Schedule was the answer.' },
+      { text: 'Charge each developer manually', correct: false,
+        feedback: 'NOT SCALABLE. Manual breaks at scale. Automate.' },
+    ]
+  },
+  {
+    pillar: 'OPTIMIZE', icon: '💾', title: 'STORAGE METEOR SHOWER',
+    desc: 'S3 Standard holding 3-year-old logs. Hot tier price for cold data.',
+    options: [
+      { text: 'Lifecycle policy → Glacier/Deep Archive', correct: true,
+        feedback: 'CORRECT! Lifecycle automation cuts storage 80%. Cold goes cold.' },
+      { text: 'Delete all old data without review', correct: false,
+        feedback: 'COMPLIANCE RISK. Lost legal records. Worse than overspend.' },
+      { text: 'Buy more S3 capacity', correct: false,
+        feedback: 'OPPOSITE OF FINOPS. Pays for waste forever.' },
+    ]
+  },
+  {
+    pillar: 'OPTIMIZE', icon: '☀', title: 'SOLAR FLARE TRAFFIC',
+    desc: 'On-demand spend 5x reserved rate. Workload is steady-state predictable.',
+    options: [
+      { text: 'Reserved Instances or Savings Plans', correct: true,
+        feedback: 'CORRECT! Commitment discounts 30-72% for steady-state. Predictable workload = lock it in.' },
+      { text: 'Keep on-demand for max flexibility', correct: false,
+        feedback: 'OVERPAY FOREVER. Steady-state doesn\'t need flexibility premium.' },
+      { text: 'Rate-limit users to cut traffic', correct: false,
+        feedback: 'HURTS REVENUE. Wrong tradeoff. Optimize cost, not customer.' },
+    ]
+  },
+  {
+    pillar: 'OPTIMIZE', icon: '🤖', title: 'GPU WORKLOAD SPIRAL', ai: true,
+    desc: 'AI training jobs on premium GPUs. No checkpointing. Costs spiral.',
+    options: [
+      { text: 'Spot instances + checkpointing strategy', correct: true,
+        feedback: 'CORRECT! Spot cuts AI training 70%. Checkpoints survive preemption.' },
+      { text: 'Buy dedicated on-prem GPU cluster', correct: false,
+        feedback: 'CAPEX TRAP. Burst workloads need elastic compute.' },
+      { text: 'Cancel the AI initiative entirely', correct: false,
+        feedback: 'KILLS INNOVATION. FinOps optimizes, doesn\'t block.' },
+    ]
+  },
+  {
+    pillar: 'OPTIMIZE', icon: '📸', title: 'SNAPSHOT SPRAWL',
+    desc: 'Duplicate snapshots in 6 regions. No retention policy. Storage bill exploding.',
+    options: [
+      { text: 'Snapshot lifecycle policy + cross-region audit', correct: true,
+        feedback: 'CORRECT! Auto-purge old snapshots. Audit cross-region duplicates.' },
+      { text: 'Keep all snapshots forever just in case', correct: false,
+        feedback: 'COST GROWS FOREVER. 99% never used. Storage compounds monthly.' },
+      { text: 'Delete all snapshots immediately', correct: false,
+        feedback: 'DR RISK. Need recovery points. Lifecycle, not slash-and-burn.' },
+    ]
+  },
+  {
+    pillar: 'OPTIMIZE', icon: 'λ', title: 'LAMBDA OVERPROVISION',
+    desc: 'Lambda timing out on 3GB memory. Concurrency unlimited. Bill surprise.',
+    options: [
+      { text: 'Right-size memory + concurrency limits', correct: true,
+        feedback: 'CORRECT! Memory tuning cuts Lambda costs. Concurrency caps prevent runaway.' },
+      { text: 'Move everything to EC2 instead', correct: false,
+        feedback: 'WRONG TOOL. Serverless was right pattern. Tune, don\'t abandon.' },
+      { text: 'Bump memory to 10GB across the board', correct: false,
+        feedback: 'OVERSPEND. Memory tax on every invocation. Tune per function.' },
+    ]
+  },
+  // ── OPERATE ───────────────────────────────────────────────────
+  {
+    pillar: 'OPERATE', icon: '⚠', title: 'ORPHAN SERVICE LAUNCHED',
+    desc: 'New cloud service in production. No cost owner. No budget. Spend climbing.',
+    options: [
+      { text: 'Assign cost owner + tag before deploy', correct: true,
+        feedback: 'CORRECT! Every resource needs an owner. Accountability = control.' },
+      { text: 'Let it run, sort out costs later', correct: false,
+        feedback: 'NO ACCOUNTABILITY = uncontrolled growth. FinOps anti-pattern.' },
+      { text: 'Block all new launches indefinitely', correct: false,
+        feedback: 'KILLS VELOCITY. Govern, don\'t block. Enable + control.' },
+    ]
+  },
+  {
+    pillar: 'OPERATE', icon: '🔕', title: 'IGNORED ALERTS',
+    desc: 'FinOps team alerts ignored by engineering. Anomalies fester for weeks.',
+    options: [
+      { text: 'Embed FinOps KPIs in sprint reviews', correct: true,
+        feedback: 'CORRECT! Make cost a first-class metric. Engineering owns spend impact.' },
+      { text: 'Send more alert emails to everyone', correct: false,
+        feedback: 'ALERT FATIGUE. Volume hides signal. Wrong direction.' },
+      { text: 'FinOps team fixes everything alone', correct: false,
+        feedback: 'CENTRAL TEAM CAN\'T SCALE. FinOps is a culture, not a person.' },
+    ]
+  },
+  {
+    pillar: 'OPERATE', icon: '🚨', title: 'FRIDAY ANOMALY',
+    desc: 'Spend spike detected Friday 5pm. No one watching. Weekend ahead.',
+    options: [
+      { text: 'Auto-alerts + budget threshold triggers', correct: true,
+        feedback: 'CORRECT! Automation catches anomalies 24/7. Off-hours protected.' },
+      { text: 'Hire weekend ops staff to watch dashboards', correct: false,
+        feedback: 'EXPENSIVE + UNRELIABLE. Automation scales, humans don\'t.' },
+      { text: 'Check Monday morning, fix then', correct: false,
+        feedback: 'WEEKEND BURN. 60+ hours of waste before action. Costly delay.' },
+    ]
+  },
+  {
+    pillar: 'OPERATE', icon: '🌐', title: 'MULTI-CLOUD MAZE',
+    desc: '3 cloud providers. 3 dashboards. No unified view. Finance furious.',
+    options: [
+      { text: 'CloudHealth multi-cloud management', correct: true,
+        feedback: 'CORRECT! One platform, all clouds. Unified policy + reporting.' },
+      { text: 'Pick one provider, dump the others', correct: false,
+        feedback: 'CONSOLIDATION RISK. Workloads optimized per cloud. Tool the answer.' },
+      { text: 'Manually reconcile spreadsheets monthly', correct: false,
+        feedback: 'DOESN\'T SCALE. Errors compound. Real-time impossible.' },
+    ]
+  },
+  {
+    pillar: 'OPERATE', icon: '☸', title: 'KUBERNETES BLOAT',
+    desc: 'K8s cluster 30% over-provisioned. Requests > usage. Nodes underutilized.',
+    options: [
+      { text: 'CloudHealth container rightsizing', correct: true,
+        feedback: 'CORRECT! Container-level right-sizing matches requests to actual use.' },
+      { text: 'Add more nodes to handle spikes', correct: false,
+        feedback: 'WRONG WAY. Already over-provisioned. Tune requests, not capacity.' },
+      { text: 'Increase pod requests for safety margin', correct: false,
+        feedback: 'COMPOUNDS WASTE. Padding hides inefficiency. Right-size first.' },
+    ]
+  },
+  {
+    pillar: 'OPERATE', icon: '🐢', title: 'CRAWL STAGE STUCK',
+    desc: 'Team only reviews bills monthly. Always reactive. Never optimizing.',
+    options: [
+      { text: 'Move to real-time alerting + weekly reviews', correct: true,
+        feedback: 'CORRECT! Crawl→Walk→Run. Real-time data + cadence drives maturity.' },
+      { text: 'Wait for bigger budget to invest later', correct: false,
+        feedback: 'DELAY = WASTE. FinOps maturity pays for itself fast.' },
+      { text: 'Outsource cost management completely', correct: false,
+        feedback: 'NO INTERNAL CULTURE. FinOps must be in-house ownership.' },
+    ]
+  },
+  {
+    pillar: 'OPERATE', icon: '📈', title: 'CFO DEMANDS ROI',
+    desc: 'Executive asks: "What\'s our cloud ROI vs on-prem?" Need answer in 24h.',
+    options: [
+      { text: 'CloudHealth TCO + Business Value dashboards', correct: true,
+        feedback: 'CORRECT! TCO modeling + business value reporting answers exec asks.' },
+      { text: 'Quote the AWS sales whitepaper', correct: false,
+        feedback: 'NOT YOUR DATA. Generic claims fail with real numbers. Tool the answer.' },
+      { text: 'Defer the question to next quarter', correct: false,
+        feedback: 'ERODES TRUST. Exec questions need exec-grade answers fast.' },
+    ]
+  },
+  {
+    pillar: 'OPERATE', icon: '💰', title: 'COST UP, REVENUE FLAT',
+    desc: 'Cloud spend grew 300%. Revenue flat. Board questioning the strategy.',
+    options: [
+      { text: 'Unit economics: cost per business metric', correct: true,
+        feedback: 'CORRECT! Cost-per-customer or cost-per-transaction reveals true efficiency.' },
+      { text: 'Cut all cloud spend by 30% across the board', correct: false,
+        feedback: 'BLUNT INSTRUMENT. Kills growth investments. Need surgical cuts.' },
+      { text: 'Migrate everything back on-prem', correct: false,
+        feedback: 'EXTREME REACTION. Unit economics first. Diagnose before amputate.' },
+    ]
+  },
+  // ── INFORM (5 more) ─────────────────────────────────────────
+  {
+    pillar: 'INFORM', icon: '🧠', title: 'AI MODEL SPEND OPAQUE', ai: true,
+    desc: 'OpenAI + Bedrock + Claude API bills hit $80K/mo. No team breakdown.',
+    options: [
+      { text: 'Tag API keys per team + per use case', correct: true,
+        feedback: 'CORRECT! Key-level tagging maps token spend to teams. Foundation of AI FinOps.' },
+      { text: 'Pool all AI spend under R&D', correct: false,
+        feedback: 'NO ACCOUNTABILITY. Heaviest users escape. Cost grows unchecked.' },
+      { text: 'Cap monthly spend hard at $80K', correct: false,
+        feedback: 'BLOCKS WORK. Need allocation, not arbitrary caps. Visibility first.' },
+    ]
+  },
+  {
+    pillar: 'INFORM', icon: '🌍', title: 'EGRESS BILL SHOCK',
+    desc: 'Data egress charges hit $40K/mo. No one knew where traffic was going.',
+    options: [
+      { text: 'Enable VPC flow logs + cost-per-flow analysis', correct: true,
+        feedback: 'CORRECT! Flow logs reveal hidden egress patterns. Targets cross-region waste.' },
+      { text: 'Disable internet gateway entirely', correct: false,
+        feedback: 'BREAKS APPS. Surgery, not amputation. Diagnose first.' },
+      { text: 'Switch ISPs for cheaper rates', correct: false,
+        feedback: 'WRONG LAYER. Cloud egress, not ISP. Look at actual traffic.' },
+    ]
+  },
+  {
+    pillar: 'INFORM', icon: '🔮', title: 'FORECAST DRIFT',
+    desc: 'Q3 actual spend 45% over forecast. Finance lost trust in numbers.',
+    options: [
+      { text: 'CloudHealth ML forecasting + variance alerts', correct: true,
+        feedback: 'CORRECT! ML-based forecasts catch drift early. Variance alerts before quarter close.' },
+      { text: 'Pad next forecast by 50% for safety', correct: false,
+        feedback: 'HIDES PROBLEM. Bigger budget = more waste. Fix the model, not the cushion.' },
+      { text: 'Stop forecasting. Just track actuals', correct: false,
+        feedback: 'NO PLANNING. Finance demands forecasts. Improve, don\'t abandon.' },
+    ]
+  },
+  {
+    pillar: 'INFORM', icon: '🏷', title: 'TAG COMPLIANCE BLIND',
+    desc: 'Policy says all resources need 5 tags. Reality: 60% have zero tags.',
+    options: [
+      { text: 'Tag compliance dashboard + automated enforcement', correct: true,
+        feedback: 'CORRECT! Dashboard shows gaps. Automation enforces at deploy time.' },
+      { text: 'Email engineering teams every Monday', correct: false,
+        feedback: 'EMAIL FATIGUE. Doesn\'t scale. Automate enforcement.' },
+      { text: 'Accept it and move on', correct: false,
+        feedback: 'GIVING UP. Tagging is FinOps foundation. Cannot skip.' },
+    ]
+  },
+  {
+    pillar: 'INFORM', icon: '📡', title: 'COMMITTED USE GAPS',
+    desc: 'GCP CUDs bought 2 years ago. No tracking of utilization. Are they working?',
+    options: [
+      { text: 'Commitment utilization report + true-up review', correct: true,
+        feedback: 'CORRECT! Track utilization vs commitment. Right-size at renewal.' },
+      { text: 'Cancel all CUDs and go on-demand', correct: false,
+        feedback: 'OVERCORRECTION. CUDs save money when utilized. Measure first.' },
+      { text: 'Buy more CUDs to be safe', correct: false,
+        feedback: 'BLIND SPENDING. Could be over-committed already. Data first.' },
+    ]
+  },
+  // ── OPTIMIZE (3 more — all AI) ──────────────────────────────
+  {
+    pillar: 'OPTIMIZE', icon: '🎯', title: 'LLM TOKEN HEMORRHAGE', ai: true,
+    desc: 'GPT-4 calls in production. Average prompt = 8K tokens. Costs spiraling.',
+    options: [
+      { text: 'Prompt compression + smaller model routing', correct: true,
+        feedback: 'CORRECT! Compress prompts + route easy queries to smaller models. 60-80% savings.' },
+      { text: 'Switch to a cheaper provider entirely', correct: false,
+        feedback: 'BAND-AID. Same prompts = same waste. Optimize prompts first.' },
+      { text: 'Cache nothing, always fresh calls', correct: false,
+        feedback: 'OPPOSITE OF FINOPS. Caching identical prompts saves massively.' },
+    ]
+  },
+  {
+    pillar: 'OPTIMIZE', icon: '🧬', title: 'VECTOR DB OVERSIZED', ai: true,
+    desc: 'Pinecone/Weaviate cluster running 24/7 at 5% query load. RAG app barely used.',
+    options: [
+      { text: 'Right-size pods + serverless tier for low traffic', correct: true,
+        feedback: 'CORRECT! Serverless vector DBs scale to zero. Match capacity to actual traffic.' },
+      { text: 'Add read replicas for resilience', correct: false,
+        feedback: 'WRONG DIRECTION. Already underutilized. Adding capacity adds cost.' },
+      { text: 'Migrate to bigger cluster pre-emptively', correct: false,
+        feedback: 'NO USAGE DATA SUPPORTS THIS. Optimize present before scaling future.' },
+    ]
+  },
+  {
+    pillar: 'OPTIMIZE', icon: '🎨', title: 'INFERENCE ENDPOINT IDLE', ai: true,
+    desc: 'SageMaker endpoint provisioned 24/7. Used 2 hours/day. Premium GPU rate.',
+    options: [
+      { text: 'Serverless inference + async endpoints for batch', correct: true,
+        feedback: 'CORRECT! Serverless inference scales to zero. Async batches handle non-realtime needs.' },
+      { text: 'Keep endpoint warm for instant response', correct: false,
+        feedback: 'OVERKILL. 2hr usage = 22hr waste daily. Latency tradeoff worth it.' },
+      { text: 'Buy SageMaker savings plan to cut rate', correct: false,
+        feedback: 'COMMITS TO WASTE. Discount on idle is still idle. Architecture first.' },
+    ]
+  },
+  // ── OPERATE (2 more — 1 AI) ─────────────────────────────────
+  {
+    pillar: 'OPERATE', icon: '🛡', title: 'AI GOVERNANCE VOID', ai: true,
+    desc: 'Engineers spinning up GPU jobs ad-hoc. No approval. No budget review.',
+    options: [
+      { text: 'AI workload policy + pre-deploy budget gates', correct: true,
+        feedback: 'CORRECT! Governance gates catch GPU spend before commit. Approve, then deploy.' },
+      { text: 'Block all GPU access except for ML team', correct: false,
+        feedback: 'KILLS INNOVATION. Govern, don\'t lock down. Enable + control.' },
+      { text: 'Review GPU bills monthly post-mortem', correct: false,
+        feedback: 'TOO LATE. Money already spent. Need pre-deploy gates.' },
+    ]
+  },
+  {
+    pillar: 'OPERATE', icon: '🔄', title: 'AI MODEL SPRAWL', ai: true,
+    desc: 'Teams using 6 different LLMs across the org. No standard. No oversight.',
+    options: [
+      { text: 'Approved model registry + central API gateway', correct: true,
+        feedback: 'CORRECT! Standard registry consolidates spend. Gateway enables governance + observability.' },
+      { text: 'Mandate one model for everyone', correct: false,
+        feedback: 'KILLS USE CASES. Different models for different jobs. Govern, don\'t monopolize.' },
+      { text: 'Let each team pick freely. No oversight needed', correct: false,
+        feedback: 'COST EXPLOSION. 6x bills, 6x risk. Standard + freedom within it.' },
+    ]
+  },
+];
+
+// Pick 5 questions per game: pillar-balanced 2 INFORM + 2 OPTIMIZE + 1 OPERATE
+// Always guarantee at least 1 AI-related question
+let FINOPS_EVENTS = [];
+
+function pickGameQuestions() {
+  const byPillar = {
+    INFORM: FINOPS_EVENT_POOL.filter(q => q.pillar === 'INFORM'),
+    OPTIMIZE: FINOPS_EVENT_POOL.filter(q => q.pillar === 'OPTIMIZE'),
+    OPERATE: FINOPS_EVENT_POOL.filter(q => q.pillar === 'OPERATE'),
+  };
+  const shuffle = arr => {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  };
+
+  const pickFromPillar = (pillar, count, mustIncludeAI = false) => {
+    const pool = byPillar[pillar];
+    if (mustIncludeAI) {
+      const aiQs = shuffle(pool.filter(q => q.ai));
+      const nonAiQs = shuffle(pool.filter(q => !q.ai));
+      return [aiQs[0], ...nonAiQs.slice(0, count - 1)].filter(Boolean);
+    }
+    return shuffle(pool).slice(0, count);
+  };
+
+  // Decide which pillar gets the guaranteed AI question
+  // Weighted to OPTIMIZE since that's where most AI questions live
+  const aiPillars = ['OPTIMIZE', 'OPTIMIZE', 'INFORM', 'OPERATE'];
+  const aiPillar = aiPillars[Math.floor(Math.random() * aiPillars.length)];
+
+  const picked = [
+    ...pickFromPillar('INFORM', 2, aiPillar === 'INFORM'),
+    ...pickFromPillar('OPTIMIZE', 2, aiPillar === 'OPTIMIZE'),
+    ...pickFromPillar('OPERATE', 1, aiPillar === 'OPERATE'),
+  ];
+
+  // Shuffle final order so pillars don't appear in fixed sequence
+  FINOPS_EVENTS = shuffle(picked);
+}
+
+// ── Drawing ────────────────────────────────────────────────────────
+function drawBackground() {
+  // Deep space gradient
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#02050C');
+  g.addColorStop(1, '#0a1428');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+
+  // Warning border during question warning
+  if (questionWarning) {
+    const intensity = Math.sin(frame * 0.2) * 0.5 + 0.5;
+    ctx.strokeStyle = `rgba(252,61,33,${0.3 + intensity * 0.4})`;
+    ctx.lineWidth = 6;
+    ctx.strokeRect(3, 3, W - 6, H - 6);
+  }
+
+  // Movement effect during rocket advancement
+  if (rocketMoving) {
+    // Clear path indicator (green corridor in middle)
+    const pathWidth = 80;
+    const pathAlpha = 0.1 + Math.sin(frame * 0.15) * 0.05;
+    ctx.fillStyle = `rgba(57,255,20,${pathAlpha})`;
+    ctx.fillRect(W/2 - pathWidth/2, 0, pathWidth, H);
+    
+    // Speed lines showing movement
+    for (let i = 0; i < 5; i++) {
+      const x = W/2 + (Math.random() - 0.5) * pathWidth;
+      const y = (frame * 3 + i * 120) % (H + 60) - 30;
+      ctx.strokeStyle = `rgba(57,255,20,${0.4 + Math.random() * 0.3})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x, y + 20);
+      ctx.stroke();
+    }
+  }
+
+  // Game end animations
+  if (gameEndAnimation) {
+    const progress = 1 - (gameEndTimer / 300);
+    
+    if (gameEndType === 'death') {
+      // Rocket explosion animation
+      const intensity = Math.sin(frame * 0.6) * 0.5 + 0.5;
+      
+      // Red explosion effects
+      ctx.strokeStyle = `rgba(252,61,33,${0.5 + intensity * 0.5})`;
+      ctx.lineWidth = 12;
+      ctx.strokeRect(2, 2, W - 4, H - 4);
+      
+      // Multiple explosion circles around ship
+      for (let i = 0; i < 8; i++) {
+        const angle = (i / 8) * Math.PI * 2 + frame * 0.1;
+        const radius = 40 + progress * 60;
+        const x = ship.x + Math.cos(angle) * radius;
+        const y = ship.y + Math.sin(angle) * radius;
+        
+        ctx.strokeStyle = `rgba(255,${100 + Math.random() * 100},0,${0.8 - progress * 0.5})`;
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.arc(x, y, 15 + Math.random() * 10, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      
+      // Debris particles
+      for (let i = 0; i < 25; i++) {
+        const x = ship.x + (Math.random() - 0.5) * 120;
+        const y = ship.y + (Math.random() - 0.5) * 120;
+        const sparkSize = 3 + Math.random() * 4;
+        ctx.fillStyle = `rgba(255,${Math.random() * 255},0,${0.8 - progress * 0.6})`;
+        ctx.fillRect(x, y, sparkSize, sparkSize);
+      }
+      
+    } else if (gameEndType === 'victory') {
+      // Moon landing animation
+      const landingProgress = Math.min(1, progress * 1.5);
+      
+      // Green success glow
+      const glow = Math.sin(frame * 0.2) * 0.3 + 0.7;
+      ctx.strokeStyle = `rgba(57,255,20,${glow * 0.4})`;
+      ctx.lineWidth = 6;
+      ctx.strokeRect(3, 3, W - 6, H - 6);
+      
+      // Landing guidance beam from moon (animated progression)
+      if (progress > 0.1) {
+        const moonProgress = Math.max(0, questionsAnsweredThisGame - 3);
+        const moonX = W / 2;
+        const moonY = 80 - (moonProgress * 15);
+        const moonRadius = 30 + (moonProgress * 10);
+        
+        // Calculate beam progression - starts from moon, extends toward rocket
+        const beamStartProgress = Math.max(0, (progress - 0.1) / 0.3); // 0.1 to 0.4 progress
+        const totalDistance = Math.hypot(ship.x - moonX, (ship.y - 10) - (moonY + moonRadius));
+        const beamLength = totalDistance * Math.min(1, beamStartProgress * 2);
+        
+        // Calculate beam end point (extends from moon toward rocket)
+        const angle = Math.atan2((ship.y - 10) - (moonY + moonRadius), ship.x - moonX);
+        const beamEndX = moonX + Math.cos(angle) * beamLength;
+        const beamEndY = (moonY + moonRadius) + Math.sin(angle) * beamLength;
+        
+        // Guidance beam with pulsing effect
+        const pulseIntensity = 0.4 + Math.sin(frame * 0.12) * 0.3;
+        ctx.strokeStyle = `rgba(200,216,232,${pulseIntensity})`;
+        ctx.lineWidth = 8;
+        ctx.beginPath();
+        ctx.moveTo(moonX, moonY + moonRadius);
+        ctx.lineTo(beamEndX, beamEndY);
+        ctx.stroke();
+        
+        // Inner bright core of beam
+        ctx.strokeStyle = `rgba(255,255,255,${pulseIntensity * 0.6})`;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(moonX, moonY + moonRadius);
+        ctx.lineTo(beamEndX, beamEndY);
+        ctx.stroke();
+        
+        // Landing pad glow on moon (appears when beam reaches ship)
+        if (beamStartProgress >= 1) {
+          ctx.fillStyle = `rgba(57,255,20,${0.5 + Math.sin(frame * 0.25) * 0.3})`;
+          ctx.fillRect(moonX - 15, moonY + moonRadius - 3, 30, 4);
+          
+          // Landing pad activation particles
+          for (let i = 0; i < 4; i++) {
+            const padX = moonX + (Math.random() - 0.5) * 30;
+            const padY = moonY + moonRadius + Math.random() * 8;
+            ctx.fillStyle = `rgba(57,255,20,${0.6 + Math.random() * 0.4})`;
+            ctx.fillRect(padX, padY, 1, 1);
+          }
+        }
+        
+        // Beam connection effects when it reaches ship
+        if (beamStartProgress >= 1 && progress > 0.4) {
+          // Energy field around ship when in beam
+          const fieldRadius = 25 + Math.sin(frame * 0.2) * 5;
+          ctx.strokeStyle = `rgba(200,216,232,${0.3 + Math.sin(frame * 0.18) * 0.2})`;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(ship.x, ship.y, fieldRadius, 0, Math.PI * 2);
+          ctx.stroke();
+          
+          // Landing approach sparkles
+          for (let i = 0; i < 8; i++) {
+            const sparkX = ship.x + (Math.random() - 0.5) * 40;
+            const sparkY = ship.y + 10 + Math.random() * 20;
+            const sparkSize = 1 + Math.random() * 2;
+            ctx.fillStyle = `rgba(200,216,232,${0.7 + Math.random() * 0.3})`;
+            ctx.fillRect(sparkX, sparkY, sparkSize, sparkSize);
+          }
+        }
+        
+        // Final landing dust effect
+        if (progress > 0.8) {
+          for (let i = 0; i < 8; i++) {
+            const angle = (i / 8) * Math.PI * 2;
+            const dustX = ship.x + Math.cos(angle) * 20;
+            const dustY = ship.y + 20 + Math.sin(angle) * 10;
+            ctx.fillStyle = `rgba(200,216,232,${0.4 + Math.random() * 0.3})`;
+            ctx.fillRect(dustX, dustY, 3, 3);
+          }
+        }
+      }
+    }
+  }
+
+  // Crash effects
+  if (rocketCrashed) {
+    // Red warning effects
+    const intensity = Math.sin(frame * 0.4) * 0.5 + 0.5;
+    ctx.strokeStyle = `rgba(252,61,33,${0.3 + intensity * 0.4})`;
+    ctx.lineWidth = 8;
+    ctx.strokeRect(4, 4, W - 8, H - 8);
+    
+    // Sparks and debris
+    for (let i = 0; i < 12; i++) {
+      const x = ship.x + (Math.random() - 0.5) * 60;
+      const y = ship.y + (Math.random() - 0.5) * 60;
+      const sparkSize = 2 + Math.random() * 3;
+      ctx.fillStyle = `rgba(255,${100 + Math.random() * 100},0,${0.6 + Math.random() * 0.4})`;
+      ctx.fillRect(x, y, sparkSize, sparkSize);
+    }
+  }
+
+  // Nebulae
+  nebulae.forEach(n => {
+    const grd = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r);
+    grd.addColorStop(0, `hsla(${n.h},80%,40%,0.08)`);
+    grd.addColorStop(1, 'transparent');
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // Stars
+  stars.forEach(s => {
+    s.y += s.speed;
+    s.twinkle += 0.05;
+    if (s.y > H) { s.y = -2; s.x = Math.random() * W; }
+    const a = 0.4 + 0.6 * Math.sin(s.twinkle);
+    ctx.fillStyle = `rgba(240,244,255,${a})`;
+    ctx.fillRect(s.x | 0, s.y | 0, s.r, s.r);
+  });
+}
+
+function drawMoon() {
+  // Show moon starting from Wave 4 (questionsAnsweredThisGame >= 4 OR phase >= 3)
+  const shouldShowMoon = phase >= 3 || questionsAnsweredThisGame >= 4;
+  if (!shouldShowMoon) return;
+  
+  const mx = W / 2;
+  // Moon gets closer as we progress through waves 4 and 5
+  const moonProgress = Math.max(0, questionsAnsweredThisGame - 3); // 0 for wave 4, 1+ for wave 5
+  const my = 80 - (moonProgress * 15); // Moon gets closer
+  const mr = 30 + (moonProgress * 10); // Moon gets bigger
+
+  // Glow
+  const g = ctx.createRadialGradient(mx, my, 0, mx, my, mr * 2);
+  g.addColorStop(0, 'rgba(200,216,232,0.15)');
+  g.addColorStop(1, 'transparent');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(mx, my, mr * 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Moon
+  ctx.fillStyle = '#C8D8E8';
+  ctx.beginPath();
+  ctx.arc(mx, my, mr, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Craters
+  const craters = [{x:-12,y:-6,r:6},{x:6,y:8,r:5},{x:14,y:-12,r:3},{x:-3,y:14,r:4}];
+  craters.forEach(c => {
+    ctx.fillStyle = '#A8C0D0';
+    ctx.beginPath();
+    ctx.arc(mx + c.x, my + c.y, c.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // Landing pad (when very close)
+  if (phaseProgress > 600) {
+    ctx.fillStyle = '#39FF14';
+    ctx.fillRect(mx - 12, my + mr - 2, 24, 3);
+  }
+}
+
+function drawShip() {
+  const s = ship;
+  if (s.invincible > 0 && Math.floor(frame / 4) % 2 === 0) return;
+
+  // Don't draw ship during death animation (it's exploded)
+  if (gameEndAnimation && gameEndType === 'death') return;
+
+  // Calculate position during animations
+  let drawX = s.x;
+  let drawY = s.y;
+  let rotation = 0;
+  
+  if (gameEndAnimation && gameEndType === 'victory') {
+    // Landing animation - ship follows guiding light path
+    const progress = 1 - (gameEndTimer / 300);
+    const moonProgress = Math.max(0, questionsAnsweredThisGame - 3);
+    const moonX = W / 2;
+    const moonY = 80 - (moonProgress * 15);
+    const moonRadius = 30 + (moonProgress * 10);
+    const targetY = moonY + moonRadius - 8; // Land on moon surface
+    const targetX = moonX; // Center on moon
+    
+    // Phase 1: Wait for guiding beam to reach ship (0-0.4 progress)
+    if (progress < 0.4) {
+      // Ship stays in place, maybe slight hover
+      drawY = s.y + Math.sin(frame * 0.1) * 2;
+      drawX = s.x + Math.sin(frame * 0.15) * 1;
+    } else {
+      // Phase 2: Follow the beam path to moon (0.4-1.0 progress)
+      const followProgress = (progress - 0.4) / 0.6;
+      const smoothFollow = followProgress * followProgress * (3 - 2 * followProgress); // Ease in-out
+      
+      // Move both X and Y towards moon center
+      drawX = s.x + (targetX - s.x) * smoothFollow;
+      drawY = s.y + (targetY - s.y) * smoothFollow;
+      
+      // Gentle wobble during final approach
+      if (followProgress > 0.7) {
+        rotation = Math.sin(frame * 0.25) * 0.02 * (1 - followProgress);
+        drawX += Math.sin(frame * 0.2) * 3 * (1 - followProgress);
+      }
+      
+      // Point ship slightly toward moon during descent
+      const angleToMoon = Math.atan2(targetY - drawY, targetX - drawX);
+      rotation += angleToMoon * 0.1;
+    }
+    
+  } else if (rocketMoving) {
+    // Slowly move ship upward during advancement animation
+    const progress = 1 - (rocketMoveTimer / 240);
+    drawY = s.y - (progress * 60); // Move up 60 pixels over animation duration
+    rotation = -0.1; // Slight upward tilt
+  }
+  
+  ctx.save();
+  ctx.translate(drawX | 0, drawY | 0);
+  ctx.rotate(rotation);
+
+  // Engine flames (enhanced during rocket movement)
+  s.thrustAnim = (s.thrustAnim + 0.4) % (Math.PI * 2);
+  let flameH = 10 + 6 * Math.abs(Math.sin(s.thrustAnim));
+  
+  // Bigger flames during rocket movement
+  if (rocketMoving) {
+    flameH *= 2; // Double flame size during movement
+  }
+
+  // Side thrusters
+  ctx.fillStyle = '#FF6B00';
+  ctx.fillRect(-7, 13, 4, flameH * 0.7);
+  ctx.fillRect(3, 13, 4, flameH * 0.7);
+  ctx.fillStyle = '#FFB300';
+  ctx.fillRect(-6, 13, 2, flameH * 0.5);
+  ctx.fillRect(4, 13, 2, flameH * 0.5);
+
+  // Main engine
+  ctx.fillStyle = '#FF6B00';
+  ctx.fillRect(-4, 15, 8, flameH);
+  ctx.fillStyle = '#FFDE00';
+  ctx.fillRect(-2, 15, 4, flameH * 0.6);
+
+  // Rocket body (white)
+  ctx.fillStyle = '#F0F4FF';
+  ctx.fillRect(-6, -10, 12, 24);
+
+  // CLOUDHEALTH orange band
+  ctx.fillStyle = '#FF6B1A';
+  ctx.fillRect(-6, -2, 12, 5);
+
+  // Nose cone
+  ctx.fillStyle = '#F0F4FF';
+  ctx.beginPath();
+  ctx.moveTo(0, -18);
+  ctx.lineTo(-6, -10);
+  ctx.lineTo(6, -10);
+  ctx.closePath();
+  ctx.fill();
+
+  // Nose tip
+  ctx.fillStyle = '#FC3D21';
+  ctx.fillRect(-1, -18, 2, 3);
+
+  // CH logo dot
+  ctx.fillStyle = '#1E88E5';
+  ctx.fillRect(-5, -7, 3, 3);
+  ctx.fillStyle = '#00E5FF';
+  ctx.fillRect(2, -7, 3, 3);
+
+  // Boosters
+  ctx.fillStyle = '#C8C8D0';
+  ctx.fillRect(-11, -2, 4, 16);
+  ctx.fillRect(7, -2, 4, 16);
+  ctx.fillStyle = '#FF6B1A';
+  ctx.fillRect(-11, 8, 4, 4);
+  ctx.fillRect(7, 8, 4, 4);
+
+  // Window
+  ctx.fillStyle = '#00E5FF';
+  ctx.fillRect(-2, -13, 4, 4);
+
+  ctx.restore();
+}
+
+function drawAsteroid(a) {
+  ctx.save();
+  ctx.translate(a.x | 0, a.y | 0);
+  ctx.rotate(a.rot);
+
+  // Pick color/style by waste type
+  const colors = {
+    overprovision: { main: '#8B4545', dark: '#5B2525', label: '🔥' },
+    idle: { main: '#6B6B8B', dark: '#3B3B5B', label: '💤' },
+    untagged: { main: '#8B7355', dark: '#5B4525', label: '?' },
+    duplicate: { main: '#7B4585', dark: '#4B2555', label: '××' },
+  };
+  const c = colors[a.type] || colors.untagged;
+
+  // Asteroid body
+  ctx.fillStyle = c.main;
+  ctx.fillRect(-a.size/2, -a.size/2, a.size, a.size);
+  ctx.fillStyle = c.dark;
+  ctx.fillRect(-a.size/2 + 2, -a.size/2 + 2, a.size - 4, a.size - 4);
+  // Spikes
+  ctx.fillStyle = c.main;
+  ctx.fillRect(-a.size/2 - 3, -2, 3, 4);
+  ctx.fillRect(a.size/2, -2, 3, 4);
+  ctx.fillRect(-2, -a.size/2 - 3, 4, 3);
+  ctx.fillRect(-2, a.size/2, 4, 3);
+
+  // Crater detail
+  ctx.fillStyle = c.dark;
+  ctx.fillRect(-a.size/4, -a.size/4, 3, 3);
+
+  // HP bar
+  if (a.hp > 1) {
+    ctx.fillStyle = '#39FF14';
+    ctx.fillRect(-a.size/2, -a.size/2 - 5, (a.size * a.hp / a.maxHp), 2);
+  }
+
+  ctx.restore();
+}
+
+function drawAnswerAsteroid(a) {
+  // Draw rotating asteroid body first
+  ctx.save();
+  ctx.translate(a.x | 0, a.y | 0);
+  ctx.rotate(a.rot); // Rotate the asteroid shape
+
+  // All answer asteroids have the same neutral color
+  const color = '#7C6A4A'; // Neutral brown color for all asteroids
+  const darkColor = '#5C4A2A';
+
+  // Large asteroid body (rotates)
+  ctx.fillStyle = color;
+  ctx.fillRect(-a.size/2, -a.size/2, a.size, a.size);
+  ctx.fillStyle = darkColor;
+  ctx.fillRect(-a.size/2 + 4, -a.size/2 + 4, a.size - 8, a.size - 8);
+  
+  // Large spikes (rotates)
+  ctx.fillStyle = color;
+  ctx.fillRect(-a.size/2 - 6, -4, 6, 8);
+  ctx.fillRect(a.size/2, -4, 6, 8);
+  ctx.fillRect(-4, -a.size/2 - 6, 8, 6);
+  ctx.fillRect(-4, a.size/2, 8, 6);
+  
+  // Add more irregular asteroid details (rotates)
+  ctx.fillStyle = darkColor;
+  ctx.fillRect(-a.size/4, -a.size/4, 6, 6);
+  ctx.fillRect(a.size/4 - 3, a.size/4 - 3, 4, 4);
+  ctx.fillRect(-a.size/3, a.size/3, 5, 3);
+
+  ctx.restore(); // End rotation for asteroid body
+
+  // Draw text and UI elements without rotation (always readable)
+  ctx.save();
+  ctx.translate(a.x | 0, a.y | 0);
+  // NO ROTATION HERE - text stays upright
+
+  // Answer text (dynamically sized to fit) - NEVER ROTATES
+  ctx.fillStyle = '#FFF';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  
+  // Available text area (leaving margin for spikes and HP bar)
+  const textAreaWidth = a.size - 16;
+  const textAreaHeight = a.size - 20;
+  
+  // Start with larger font and scale down if needed
+  let fontSize = 10;
+  let lines = [];
+  let lineHeight = 0;
+  
+  // Function to wrap text at given font size
+  function wrapText(text, maxWidth, font) {
+    ctx.font = font;
+    const words = text.split(' ');
+    const wrappedLines = [];
+    let currentLine = '';
+    
+    for (let word of words) {
+      const testLine = currentLine + (currentLine ? ' ' : '') + word;
+      const testWidth = ctx.measureText(testLine).width;
+      
+      if (testWidth <= maxWidth || !currentLine) {
+        currentLine = testLine;
+      } else {
+        wrappedLines.push(currentLine);
+        currentLine = word;
+      }
+    }
+    if (currentLine) wrappedLines.push(currentLine);
+    return wrappedLines;
+  }
+  
+  // Try different font sizes to find the best fit
+  for (let testSize = 16; testSize >= 8; testSize--) {
+    const font = `${testSize}px Arial, sans-serif`;
+    const testLines = wrapText(a.answerText, textAreaWidth, font);
+    const testLineHeight = testSize + 3;
+    const totalTextHeight = testLines.length * testLineHeight;
+    
+    if (totalTextHeight <= textAreaHeight) {
+      fontSize = testSize;
+      lines = testLines;
+      lineHeight = testLineHeight;
+      break;
+    }
+  }
+  
+  // Set final font and draw text (using more readable font)
+  ctx.font = `${fontSize}px Arial, sans-serif`;
+  ctx.shadowColor = '#000';
+  ctx.shadowBlur = 2;
+  const startY = -(lines.length - 1) * lineHeight / 2;
+  
+  lines.forEach((line, i) => {
+    ctx.fillText(line, 0, startY + i * lineHeight);
+  });
+  ctx.shadowBlur = 0;
+
+  // HP bar (same color for all) - NEVER ROTATES
+  ctx.fillStyle = '#FF6B1A';
+  const barWidth = a.size;
+  ctx.fillRect(-barWidth/2, -a.size/2 - 8, (barWidth * a.hp / a.maxHp), 3);
+  
+  ctx.restore();
+}
+
+function drawCoin(c) {
+  ctx.save();
+  ctx.translate(c.x | 0, c.y | 0);
+  c.anim = (c.anim || 0) + 0.12;
+
+  const scale = 0.8 + 0.2 * Math.abs(Math.sin(c.anim));
+  ctx.scale(scale, 1);
+
+  const colors = {
+    visibility: { fill: '#00E5FF', stroke: '#0288A0', label: 'V' },
+    governance: { fill: '#1E88E5', stroke: '#0B3D91', label: 'G' },
+    savings: { fill: '#FFB300', stroke: '#FF6B1A', label: '$' },
+  };
+  const col = colors[c.type];
+
+  // Coin shadow glow
+  ctx.shadowColor = col.fill;
+  ctx.shadowBlur = 8;
+  ctx.fillStyle = col.fill;
+  ctx.beginPath();
+  ctx.arc(0, 0, 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Inner
+  ctx.fillStyle = col.stroke;
+  ctx.beginPath();
+  ctx.arc(0, 0, 6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Label
+  ctx.fillStyle = '#FFF';
+  ctx.font = 'bold 8px "Press Start 2P"';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(col.label, 0, 1);
+
+  ctx.restore();
+}
+
+function drawBullet(b) {
+  ctx.fillStyle = '#FFB300';
+  ctx.shadowColor = '#FFB300';
+  ctx.shadowBlur = 8;
+  ctx.fillRect((b.x - 1.5) | 0, (b.y - 6) | 0, 3, 12);
+  ctx.shadowBlur = 0;
+}
+
+function drawExplosions() {
+  explosions = explosions.filter(e => e.life > 0);
+  explosions.forEach(e => {
+    e.life--;
+    const t = 1 - e.life / e.maxLife;
+    const r = e.radius * t;
+    ctx.strokeStyle = `rgba(255,180,0,${1 - t})`;
+    ctx.lineWidth = 2.5;
+    ctx.shadowColor = '#FF6B00';
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, r, 0, Math.PI * 2);
+    ctx.stroke();
+    if (t < 0.4) {
+      ctx.fillStyle = `rgba(255,255,200,${0.7 * (1 - t/0.4)})`;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, r * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+  });
+}
+
+function drawParticles() {
+  particles = particles.filter(p => p.life > 0);
+  particles.forEach(p => {
+    p.x += p.vx; p.y += p.vy;
+    p.life--;
+    const a = p.life / p.maxLife;
+    ctx.fillStyle = `rgba(${p.r},${p.g},${p.b},${a})`;
+    ctx.fillRect(p.x | 0, p.y | 0, p.size, p.size);
+  });
+}
+
+// ── Spawning ──────────────────────────────────────────────────────
+function spawnAsteroid() {
+  const types = ['overprovision', 'idle', 'untagged', 'duplicate'];
+  const type = types[Math.floor(Math.random() * types.length)];
+  const hp = 1 + Math.floor((phase - 1) / 2);
+  asteroids.push({
+    x: 20 + Math.random() * (W - 40),
+    y: -20,
+    vx: (Math.random() - 0.5) * (0.8 + phase * 0.25),
+    vy: 0.6 + Math.random() * (0.5 + phase * 0.2),
+    rot: 0,
+    rotSpeed: (Math.random() - 0.5) * 0.06,
+    size: 14 + Math.random() * 10,
+    type, hp, maxHp: hp,
+  });
+}
+
+function spawnCoin() {
+  const type = COIN_TYPES[Math.floor(Math.random() * COIN_TYPES.length)];
+  coins.push({
+    x: 20 + Math.random() * (W - 40),
+    y: -10,
+    vy: 0.7 + Math.random() * 0.4,
+    type,
+    anim: Math.random() * Math.PI,
+  });
+}
+
+function spawnSpendTag(text, x, y, color) {
+  spendTags.push({
+    text, x, y, color,
+    vy: -0.8,
+    life: 50,
+    maxLife: 50,
+  });
+}
+
+function drawSpendTags() {
+  if (!spendTags.length) return;
+  ctx.save();
+  ctx.font = 'bold 9px "Press Start 2P", monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  spendTags.forEach(t => {
+    t.y += t.vy;
+    t.life--;
+    const a = Math.max(0, t.life / t.maxLife);
+    ctx.globalAlpha = a;
+    ctx.fillStyle = t.color;
+    ctx.fillText(t.text, t.x, t.y);
+  });
+  ctx.restore();
+  spendTags = spendTags.filter(t => t.life > 0);
+}
+
+function spawnExplosion(x, y, big = false) {
+  explosions.push({
+    x, y,
+    radius: big ? 35 : 22,
+    life: big ? 25 : 18,
+    maxLife: big ? 25 : 18,
+  });
+  for (let i = 0; i < (big ? 14 : 8); i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1 + Math.random() * (big ? 3 : 2);
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+      r: 255, g: (120 + Math.random() * 130) | 0, b: 0,
+      size: 2 + Math.floor(Math.random() * 2),
+      life: 15 + Math.floor(Math.random() * 15),
+      maxLife: 30,
+    });
+  }
+}
+
+// ── FinOps Event Trigger ──────────────────────────────────────────
+let eventTriggered = false;
+let eventsAnswered = 0;
+let questionIndex = 0; // walk through pre-picked 5
+
+function triggerFinOpsEvent() {
+  if (state !== 'playing') return;
+  if (questionIndex >= FINOPS_EVENTS.length) return; // out of questions
+  if (questionActive || questionWarning) return; // already have a question active or warning
+  
+  // Don't clear asteroids - let them continue flowing naturally
+  // asteroids = []; // REMOVED - keep asteroids flowing
+  
+  // Start warning phase
+  questionWarning = true;
+  questionWarningTimer = 120; // 2 seconds warning at 60fps
+  
+  const event = FINOPS_EVENTS[questionIndex];
+  questionIndex++;
+  currentQuestion = event;
+  
+  // Show warning message
+  announceQuestionWarning();
+}
+
+function announceQuestionWarning() {
+  const el = document.getElementById('wave-announce');
+  el.innerHTML = '⚠️ BIG ASTEROIDS INCOMING! ⚠️<br>PREPARE FOR FINOPS CHALLENGE!';
+  el.style.opacity = '1';
+  el.style.color = 'var(--nasa-red)';
+  el.style.fontSize = '10px';
+  el.style.textShadow = '0 0 15px var(--nasa-red)';
+}
+
+function startQuestionAsteroids() {
+  if (!currentQuestion) return;
+  
+  questionActive = true;
+  questionWarning = false;
+  
+  // Show question at top of screen
+  const questionDisplay = document.getElementById('question-display');
+  document.getElementById('question-icon').textContent = currentQuestion.icon;
+  document.getElementById('question-title').innerHTML =
+    `★ ${currentQuestion.pillar} ★ Q${questionIndex}/5 - ${currentQuestion.title}`;
+  document.getElementById('question-desc').textContent = currentQuestion.desc;
+  questionDisplay.classList.add('show');
+
+  // Create 3 large answer asteroids coming from the top
+  const opts = [...currentQuestion.options];
+  for (let i = opts.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [opts[i], opts[j]] = [opts[j], opts[i]];
+  }
+  const shuffled = opts;
+  // Simple, closer spacing - just enough to avoid overlap
+  const spacing = W / 3.5; // Closer than W/4 but not too close
+  const totalWidth = (shuffled.length - 1) * spacing; // Total width of all asteroids
+  const startX = (W - totalWidth) / 2; // Center the group on screen
+  
+  shuffled.forEach((opt, index) => {
+    const x = startX + (index * spacing);
+    const y = -100; // Start above screen
+    
+    answerAsteroids.push({
+      x: x,
+      y: y,
+      vx: 0,
+      vy: 1.5, // Slow descent
+      rot: 0,
+      rotSpeed: (Math.random() - 0.5) * 0.04, // Slow rotation for asteroid body
+      size: 80,
+      hp: questionHitsRequired,
+      maxHp: questionHitsRequired,
+      option: opt,
+      isCorrect: opt.correct,
+      answerText: opt.text,
+      targetY: H * 0.45, // Where they should stop
+    });
+  });
+  
+  // Hide warning
+  document.getElementById('wave-announce').style.opacity = '0';
+}
+
+function handleAnswerAsteroidDestroyed(asteroid) {
+  const option = asteroid.option;
+  questionActive = false;
+  currentQuestion = null;
+  questionsAnsweredThisGame++;
+  
+  // Hide question display
+  document.getElementById('question-display').classList.remove('show');
+  
+  // Clear all answer asteroids
+  answerAsteroids = [];
+  
+  if (option.correct) {
+    score += 500 * phase;
+    budget = Math.min(STARTING_BUDGET, budget + QUIZ_REFUND); // Cap budget at starting amount
+    efficiency = Math.min(100, efficiency + 10);
+    eventsAnswered++;
+    spawnSpendTag('+$' + QUIZ_REFUND + ' SAVED!', asteroid.x, asteroid.y - 20, '#39FF14');
+    
+    // Start rocket movement animation through cleared asteroid field
+    rocketMoving = true;
+    rocketMoveTimer = 240; // 4 seconds at 60fps for slower animation
+    announceRocketMovement();
+  } else {
+    // Wrong answer: rocket crashes into chosen asteroid
+    const wrongCost = (BULLET_COST * questionHitsRequired) + QUIZ_PENALTY;
+    budget = Math.max(0, budget - wrongCost);
+    efficiency = Math.max(0, efficiency - 15);
+    spawnSpendTag('-$' + wrongCost + ' WASTE!', asteroid.x, asteroid.y - 20, '#FC3D21');
+    
+    // Start crash animation
+    rocketCrashed = true;
+    rocketCrashTimer = 180; // 3 seconds crash sequence
+    announceCrash();
+    
+    // Create explosion at crash site
+    spawnExplosion(asteroid.x, asteroid.y, true);
+  }
+  
+  // Check if budget killed by wrong answer
+  if (budget <= 0) {
+    deathReason = 'BUDGET DEPLETED';
+    startGameEndAnimation('death');
+  }
+  
+  // Reset event trigger flag
+  eventTriggered = false;
+}
+
+function announceRocketMovement() {
+  const el = document.getElementById('wave-announce');
+  el.innerHTML = `🚀 PATH CLEARED! ADVANCING! 🚀`;
+  el.style.opacity = '1';
+  el.style.color = 'var(--green)';
+  el.style.fontSize = '12px';
+  el.style.textShadow = '0 0 15px var(--green)';
+  setTimeout(() => { el.style.opacity = '0'; }, 2000);
+}
+
+function announceCrash() {
+  const el = document.getElementById('wave-announce');
+  el.innerHTML = `💥 COLLISION! SYSTEMS DAMAGED! 💥<br>HULL BREACH DETECTED`;
+  el.style.opacity = '1';
+  el.style.color = 'var(--nasa-red)';
+  el.style.fontSize = '10px';
+  el.style.textShadow = '0 0 15px var(--nasa-red)';
+  setTimeout(() => { el.style.opacity = '0'; }, 3000);
+}
+
+function startGameEndAnimation(type) {
+  gameEndAnimation = true;
+  gameEndTimer = 300; // 5 seconds at 60fps
+  gameEndType = type;
+  paused = false;
+  document.getElementById('pause-overlay').classList.remove('show');
+  document.getElementById('pause-btn').style.display = 'none';
+
+  if (type === 'death') {
+    state = 'dead';
+    // Clear all game objects for clean death animation
+    asteroids = [];
+    answerAsteroids = [];
+    coins = [];
+  } else if (type === 'victory') {
+    state = 'won';
+    // Clear asteroids but keep some visual elements
+    asteroids = [];
+    answerAsteroids = [];
+  }
+}
+
+// ── Update ─────────────────────────────────────────────────────────
+function updatePhase() {
+  document.getElementById('phase-num').textContent = phase;
+  const labels = [
+    'Q1-2 · PRE-LAUNCH',
+    'Q3-4 · TRANSLUNAR',
+    'Q5 · LUNAR APPROACH',
+  ];
+  document.getElementById('phase-label').textContent = labels[phase - 1];
+}
+
+function updateGame() {
+  frame++;
+  phaseProgress++;
+
+  if (ship.invincible > 0) ship.invincible--;
+
+  // Movement — keyboard (PC) + on-screen LEFT/RIGHT buttons (mobile)
+  const moving = keys['ArrowLeft'] || keys['ArrowRight'] || touch.left || touch.right;
+  if (keys['ArrowLeft']  || touch.left)  ship.x = Math.max(15, ship.x - ship.speed);
+  if (keys['ArrowRight'] || touch.right) ship.x = Math.min(W - 15, ship.x + ship.speed);
+
+  // Shoot — each bullet is a compute call, debited from budget
+  if ((keys[' '] || keys['Space'] || touch.fire) && ship.shootCooldown <= 0 && budget > BULLET_COST) {
+    bullets.push({ x: ship.x, y: ship.y - 18, vy: -8 });
+    let shotCost = BULLET_COST;
+    bulletsShot++; // Track bullets for accuracy
+    
+    if (eventsAnswered >= 2) {
+      bullets.push({ x: ship.x - 7, y: ship.y - 8, vy: -8 });
+      bullets.push({ x: ship.x + 7, y: ship.y - 8, vy: -8 });
+      shotCost = BULLET_COST * 3;
+      bulletsShot += 2; // Track additional bullets
+    }
+    budget = Math.max(0, budget - shotCost);
+    ship.shootCooldown = 14;
+    
+    // Check if budget depleted from shooting during questions
+    if (budget <= 0) {
+      deathReason = 'BUDGET DEPLETED';
+      startGameEndAnimation('death');
+    }
+  }
+  if (ship.shootCooldown > 0) ship.shootCooldown--;
+  if (ship.savingsBuff > 0) ship.savingsBuff--;
+
+  // Bullets
+  bullets.forEach(b => b.y += b.vy);
+  bullets = bullets.filter(b => b.y > -10);
+
+  // Always-on cloud spend (depleting monthly budget) - PAUSED during questions
+  if (frame % 60 === 0 && !questionActive && !questionWarning) {
+    const burnRate = BURN_RATE_BASE + (100 - efficiency) / 15;
+    const buff = ship.savingsBuff > 0 ? 0.5 : 1;
+    budget = Math.max(0, budget - burnRate * buff);
+    if (budget <= 0) {
+      deathReason = 'BUDGET DEPLETED';
+      startGameEndAnimation('death');
+    }
+  }
+
+  // Spawn (only if no question active or warning)
+  if (!questionActive && !questionWarning && waveActive) {
+    // Only spawn if we haven't reached the asteroid limit for this wave
+    if (waveAsteroidsSpawned < MAX_ASTEROIDS_PER_WAVE) {
+      const spawnRate = Math.max(55, 110 - phase * 15);
+      if (frame % spawnRate === 0) {
+        spawnAsteroid();
+        waveAsteroidsSpawned++;
+      }
+    }
+    if (frame % 200 === 0) spawnCoin();
+    
+    // Update wave timer
+    waveTimer++;
+  }
+
+  // Question warning countdown
+  if (questionWarning) {
+    questionWarningTimer--;
+    if (questionWarningTimer <= 0) {
+      startQuestionAsteroids();
+    }
+    return; // Don't update other game elements during warning
+  }
+
+  // Rocket movement animation countdown
+  if (rocketMoving) {
+    rocketMoveTimer--;
+    if (rocketMoveTimer <= 0) {
+      rocketMoving = false;
+    }
+    return; // Don't update other game elements during rocket movement
+  }
+
+  // Skip game updates during end animation
+  if (gameEndAnimation) {
+    return; // Don't update other game elements during end animation
+  }
+
+  // Rocket crash animation countdown
+  if (rocketCrashed) {
+    rocketCrashTimer--;
+    if (rocketCrashTimer <= 0) {
+      rocketCrashed = false;
+      // After crash, proceed to wave (wrong answers still trigger waves)
+      if (questionsAnsweredThisGame <= 5 && !waveCompleted) {
+        waveActive = true;
+        waveTimer = 0;
+        waveAsteroidsSpawned = 0;
+        announceAsteroidWave(questionsAnsweredThisGame - 1);
+      }
+    }
+    return; // Don't update other game elements during crash sequence
+  }
+
+  // Game flow management: Question -> Wave -> Question -> Wave...
+  if (!waveActive && !questionActive && !questionWarning && !rocketMoving && !rocketCrashed) {
+    
+    if (questionsAnsweredThisGame === 0) {
+      // Game start - trigger first question immediately
+      waveClearTimer++;
+      if (waveClearTimer > 60) {
+        waveClearTimer = 0;
+        eventTriggered = true;
+        triggerFinOpsEvent();
+        return;
+      }
+    } else if (!waveCompleted && questionsAnsweredThisGame > 0 && questionsAnsweredThisGame <= 5) {
+      // Just answered a question (correct or incorrect) - start corresponding wave
+      waveClearTimer++;
+      if (waveClearTimer > 60) {
+        waveClearTimer = 0;
+        waveActive = true;
+        waveCompleted = false;
+        waveTimer = 0;
+        waveAsteroidsSpawned = 0;
+        
+        // Announce incoming asteroids (use questionsAnsweredThisGame for wave number)
+        announceAsteroidWave(questionsAnsweredThisGame - 1);
+      }
+    } else if (waveCompleted && questionsAnsweredThisGame < FINOPS_EVENTS.length) {
+      // Wave completed - start next question
+      waveClearTimer++;
+      if (waveClearTimer > 60) {
+        waveClearTimer = 0;
+        waveCompleted = false; // Reset flag
+        eventTriggered = true;
+        triggerFinOpsEvent();
+        return;
+      }
+    } else if (questionsAnsweredThisGame >= 5 && waveCompleted) {
+      // All questions AND waves completed (must finish Wave 5)
+      savingsBonus = Math.floor(budget * 5);
+      score += savingsBonus;
+      startGameEndAnimation('victory');
+      return;
+    }
+  }
+
+  // Check if wave should end - only based on time or all asteroids spawned
+  if (waveActive && !questionActive && !questionWarning) {
+    const waveTimeExpired = waveTimer >= WAVE_DURATION;
+    const allAsteroidsSpawned = waveAsteroidsSpawned >= MAX_ASTEROIDS_PER_WAVE;
+    
+    // Wave ends when: time expires OR all asteroids have been spawned AND naturally cleared screen
+    if (waveTimeExpired || (allAsteroidsSpawned && asteroids.length === 0)) {
+      // End wave and mark as completed
+      waveActive = false;
+      waveCompleted = true; // Mark wave as completed
+      waveTimer = 0;
+      waveAsteroidsSpawned = 0;
+      
+      // DON'T clear asteroids - let them flow naturally off screen
+      // asteroids = []; // REMOVED - let asteroids continue their natural movement
+    }
+  }
+
+  // Update asteroids
+  asteroids.forEach(a => {
+    a.x += a.vx;
+    a.y += a.vy;
+    a.rot += a.rotSpeed;
+    if (a.x < 10 || a.x > W - 10) a.vx *= -1;
+  });
+  asteroids = asteroids.filter(a => a.y < H + 30);
+  
+  // Update answer asteroids (descending from top with rotation)
+  answerAsteroids.forEach(a => {
+    if (a.y < a.targetY) {
+      a.y += a.vy;
+    } else {
+      a.y = a.targetY;
+      a.vy = 0; // Stop when reaching target position
+    }
+    a.rot += a.rotSpeed; // Rotate the asteroid body
+  });
+
+  // Update coins
+  coins.forEach(c => c.y += c.vy);
+  coins = coins.filter(c => c.y < H + 20);
+
+  // Bullet ↔ Asteroid
+  for (let bi = bullets.length - 1; bi >= 0; bi--) {
+    const b = bullets[bi];
+    let bulletHit = false;
+    
+    // Check regular asteroids
+    for (let ai = asteroids.length - 1; ai >= 0; ai--) {
+      const a = asteroids[ai];
+      const d = Math.hypot(b.x - a.x, b.y - a.y);
+      if (d < a.size / 1.5 + 4) {
+        a.hp--;
+        bullets.splice(bi, 1);
+        bulletHit = true;
+        bulletsHit++; // Track hits for accuracy
+        spawnExplosion(b.x, b.y);
+        if (a.hp <= 0) {
+          score += 100 * phase;
+          spawnExplosion(a.x, a.y, true);
+          asteroids.splice(ai, 1);
+        }
+        break;
+      }
+    }
+    
+    // Check answer asteroids (when question is active)
+    if (!bulletHit && questionActive) {
+      for (let ai = answerAsteroids.length - 1; ai >= 0; ai--) {
+        const a = answerAsteroids[ai];
+        const d = Math.hypot(b.x - a.x, b.y - a.y);
+        if (d < a.size / 1.5 + 4) {
+          a.hp--;
+          bullets.splice(bi, 1);
+          bulletsHit++; // Track hits for accuracy
+          spawnExplosion(b.x, b.y);
+          if (a.hp <= 0) {
+            spawnExplosion(a.x, a.y, true);
+            handleAnswerAsteroidDestroyed(a);
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  // Ship ↔ Asteroid
+  if (ship.invincible === 0) {
+    for (let ai = asteroids.length - 1; ai >= 0; ai--) {
+      const a = asteroids[ai];
+      const d = Math.hypot(ship.x - a.x, ship.y - a.y);
+      if (d < a.size / 1.5 + 12) {
+        budget = Math.max(0, budget - ASTEROID_PENALTY);
+        efficiency = Math.max(0, efficiency - 8);
+        spawnExplosion(a.x, a.y, true);
+        spawnSpendTag('-$' + ASTEROID_PENALTY + ' WASTE!', a.x, a.y - 10, '#FC3D21');
+        asteroids.splice(ai, 1);
+        ship.invincible = 90;
+        if (budget <= 0) {
+          deathReason = 'BUDGET DEPLETED';
+          startGameEndAnimation('death');
+        }
+        break;
+      }
+    }
+    
+    // Ship ↔ Answer Asteroid (during questions)
+    if (questionActive) {
+      answerAsteroids.forEach((a, ai) => {
+        const d = Math.hypot(ship.x - a.x, ship.y - a.y);
+        if (d < a.size / 1.5 + 12) {
+          budget = Math.max(0, budget - ASTEROID_PENALTY);
+          efficiency = Math.max(0, efficiency - 8);
+          spawnExplosion(a.x, a.y, false);
+          spawnSpendTag('-$' + ASTEROID_PENALTY + ' COLLISION!', a.x, a.y - 10, '#FC3D21');
+          ship.invincible = 90;
+          if (budget <= 0) {
+            deathReason = 'BUDGET DEPLETED';
+            startGameEndAnimation('death');
+          }
+        }
+      });
+    }
+  }
+
+  // Ship ↔ Coin
+  for (let ci = coins.length - 1; ci >= 0; ci--) {
+    const c = coins[ci];
+    const d = Math.hypot(ship.x - c.x, ship.y - c.y);
+    if (d < 18) {
+      coinsCollected[c.type]++;
+      const refund = COIN_REFUND[c.type] || 30;
+      budget = Math.min(STARTING_BUDGET, budget + refund); // Cap budget at starting amount
+      score += 75;
+      efficiency = Math.min(100, efficiency + 2);
+      if (c.type === 'governance') ship.savingsBuff = SAVINGS_BUFF_FRAMES;
+      spawnExplosion(c.x, c.y);
+      spawnSpendTag('+$' + refund + ' SAVED', c.x, c.y - 10, '#FFB300');
+      coins.splice(ci, 1);
+    }
+  }
+
+  // Phase advance based on game progression (not just correct answers)
+  // Phase 1: Questions 1-2, Phase 2: Questions 3-4, Phase 3: Question 5 (moon appears)
+  let targetPhase = 1;
+  if (questionsAnsweredThisGame >= 4) {
+    targetPhase = 3; // Question 4+ shows moon
+  } else if (questionsAnsweredThisGame >= 2) {
+    targetPhase = 2; // Questions 2-3
+  }
+  
+  if (targetPhase > phase && phase < 3) {
+    phase = targetPhase;
+    phaseProgress = 0;
+    budget = Math.max(0, budget - PHASE_TRANSITION_COST);
+    spawnSpendTag('-$' + PHASE_TRANSITION_COST + ' (NEW PHASE)', W / 2, 80, '#FF6B1A');
+    updatePhase();
+    announceWave();
+    if (budget <= 0) {
+      deathReason = 'BUDGET DEPLETED';
+      startGameEndAnimation('death');
+    }
+  }
+
+  // HUD
+  document.getElementById('score-display').textContent = String(score).padStart(6, '0');
+  document.getElementById('budget-display').textContent = '$' + (budget | 0) + 'K';
+  const budgetBar = document.getElementById('budget-bar');
+  budgetBar.style.width = (budget / STARTING_BUDGET * 100) + '%';
+  if (budget < 200) {
+    budgetBar.classList.add('crit');
+  } else {
+    budgetBar.classList.remove('crit');
+    budgetBar.style.background = budget > 300 ? 'var(--gold)' : 'var(--nasa-red)';
+  }
+  // Calculate and display accuracy
+  const accuracy = bulletsShot > 0 ? Math.round((bulletsHit / bulletsShot) * 100) : 0;
+  document.getElementById('eff-display').textContent = accuracy + '%';
+  document.getElementById('eff-bar').style.width = accuracy + '%';
+  document.getElementById('eff-bar').style.background = accuracy > 50 ? 'var(--cyan)' : 'var(--nasa-red)';
+  
+  // Status display
+  if (rocketCrashed) {
+    document.getElementById('phase-label').textContent = '⚠️ SYSTEMS DAMAGED ⚠️';
+  } else if (rocketMoving) {
+    document.getElementById('phase-label').textContent = 'ADVANCING THROUGH CLEARED PATH';
+  } else if (waveActive) {
+    document.getElementById('phase-label').textContent = `ASTEROID FIELD (${eventsAnswered + 1}/5)`;
+  }
+}
+
+function announceWave() {
+  const el = document.getElementById('wave-announce');
+  const msgs = ['', 'PHASE 2<br>TRANSLUNAR INJECTION', 'PHASE 3<br>🌙 LUNAR APPROACH 🌙'];
+  el.innerHTML = msgs[phase - 1] || '';
+  el.style.opacity = '1';
+  el.style.color = phase >= 3 ? 'var(--moon)' : 'var(--cyan)';
+  setTimeout(() => { el.style.opacity = '0'; }, 2500);
+}
+
+function announceAsteroidWave(waveNum) {
+  const el = document.getElementById('wave-announce');
+  el.innerHTML = `🌌 HUGE WAVE OF ASTEROIDS INCOMING! 🌌<br>(${waveNum + 1}/5)`;
+  el.style.opacity = '1';
+  el.style.color = 'var(--nasa-red)';
+  el.style.fontSize = '10px';
+  el.style.textShadow = '0 0 15px var(--nasa-red)';
+  setTimeout(() => { el.style.opacity = '0'; }, 3000);
+}
+
+// ── Render ────────────────────────────────────────────────────────
+function render() {
+  ctx.clearRect(0, 0, W, H);
+
+  // Handle game end animation countdown here (outside updateGame)
+  if (gameEndAnimation) {
+    gameEndTimer--;
+    
+    // Show landing message during victory animation
+    if (gameEndType === 'victory') {
+      const progress = 1 - (gameEndTimer / 300);
+      if (progress > 0.3 && progress < 0.9) {
+        const el = document.getElementById('wave-announce');
+        el.innerHTML = `🌙 LUNAR LANDING IN PROGRESS 🌙`;
+        el.style.opacity = '1';
+        el.style.color = 'var(--green)';
+        el.style.fontSize = '12px';
+      } else if (progress >= 0.9) {
+        const el = document.getElementById('wave-announce');
+        el.innerHTML = `🎯 MISSION ACCOMPLISHED! 🎯`;
+        el.style.opacity = '1';
+        el.style.color = 'var(--gold)';
+        el.style.fontSize = '14px';
+      }
+    }
+    
+    if (gameEndTimer <= 0) {
+      gameEndAnimation = false;
+      document.getElementById('wave-announce').style.opacity = '0';
+      showOverlay(gameEndType === 'victory' ? 'won' : 'dead');
+    }
+  }
+
+  drawBackground();
+  drawMoon();
+
+  if (state === 'playing' || state === 'dead' || state === 'won') {
+    // Always draw coins and asteroids (rocket moves through them) - except during death animation
+    if (!(gameEndAnimation && gameEndType === 'death')) {
+      coins.forEach(drawCoin);
+      asteroids.forEach(drawAsteroid);
+    }
+    
+    answerAsteroids.forEach(drawAnswerAsteroid);
+    bullets.forEach(drawBullet);
+    drawShip();
+    drawExplosions();
+    drawParticles();
+    drawSpendTags();
+
+    if (state === 'playing' && !paused) updateGame();
+  }
+
+  requestAnimationFrame(render);
+}
+
+// ── Overlays ──────────────────────────────────────────────────────
+// ── Supabase config ───────────────────────────────────────────────
+const SUPABASE_URL = 'https://bruyhlosyllqciutlujx.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_9EWwL61RLG563gDGv49iNQ_9BFPSp3U';
+let db = null;
+try {
+  db = supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+} catch(e) { console.warn('Supabase not loaded, running in local mode'); }
+
+// ── Callsign profanity filter ─────────────────────────────────────
+const BAD_WORDS = [
+  'FUCK','FUCK','FUK','FUCC','FCK','FVCK','FU CK',
+  'SHIT','SH1T','SHT','SHYT',
+  'ASS','AZZ','ARSE',
+  'CUNT','CVNT','KNT',
+  'DICK','DIK','DYCK','D1CK',
+  'COCK','COK','C0CK',
+  'BITCH','B1TCH','BYTCH','BIATCH',
+  'PUSSY','PU55Y','PUSS',
+  'NIGGA','NIGGER','N1GGA','N1GGER',
+  'FAGGOT','FAGOT','FAG','FAGT',
+  'RETARD','RETRD',
+  'WHORE','HOR','SLUT','SLT',
+  'PRICK','PRCK',
+  'BASTARD','BSTRD',
+  'DAMN','CRAP',
+  'NAZI','NAZI',
+  'RAPE','RAPIST',
+  'KILL','HITLER','JIHAD',
+  'PENIS','VAGINA','BOOB','TITS','TIT',
+  'CUMSHOT','CUM','JIZZ',
+  'MASTURBAT','HANDJOB','BLOWJOB',
+  'NWORD','KIKE','SPIC','CHINK','WETBACK',
+  'CLOUDABILITY','APPTIO','FLEXERA','VANTAGE','CLOUDZERO',
+  'SUCKS','SUCK','BALLS','BALLZ','PISS','PIS',
+  'FCUK','F CUK',
+  'WANK','WANKER','TWAT','KNOB','KNOBHEAD','BOLLOCKS','TOSSER',
+  'TURD','FART','POOP',
+  'STUPID','IDIOT','MORON',
+  'SEX','PORN','NUDE','BONER',
+  'ANAL','DILDO','SKANK','DOUCHE','DOUCHEBAG',
+  'TARD','TRANNY','HOMO',
+  'TITTY','TITTIES',
+  'ORGASM','ORGY',
+];
+
+function normalizeCallsign(s) {
+  return s.toUpperCase()
+    .replace(/[4@]/g,'A').replace(/3/g,'E').replace(/[1!|]/g,'I')
+    .replace(/0/g,'O').replace(/[$5]/g,'S').replace(/7/g,'T')
+    .replace(/8/g,'B').replace(/[^A-Z]/g,'');
+}
+
+function callsignIsBad(raw) {
+  const n = normalizeCallsign(raw);
+  return BAD_WORDS.some(w => n.includes(w));
+}
+
+// ── Pool state (fetched from Supabase) ───────────────────────────
+let poolSize = 100;  // default, overridden by Supabase fetch
+let currentOdds = 100;
+
+async function fetchPoolConfig() {
+  if (!db) return;
+  try {
+    const { data } = await db.from('pool_config').select('pool_size, skip_enabled').single();
+    if (data) {
+      poolSize = data.pool_size;
+      currentOdds = poolSize;
+      updateOddsDisplay();
+      const skipBtn = document.getElementById('skip-btn');
+      if (skipBtn) skipBtn.style.display = data.skip_enabled === false ? 'none' : '';
+    }
+  } catch(e) { console.warn('Pool config fetch failed:', e); }
+}
+
+function updateOddsDisplay() {
+  const el = document.getElementById('odds-display');
+  if (el) el.textContent = '1 in ' + currentOdds;
+}
+
+// ── Combination number allocation ────────────────────────────────
+// Pool = numbers 001..999, randomly sampled to pool_size slots
+// Pick a random number from the pool (duplicates allowed per spec)
+async function allocateCombinationNumber() {
+  if (!db) {
+    return String(Math.floor(Math.random() * poolSize) + 1).padStart(3, '0');
+  }
+
+  try {
+    // 1. Fetch the available pool configuration
+    const { data: cfg } = await db.from('pool_config').select('pool_numbers').single();
+    if (!cfg) return '???';
+    const pool = cfg.pool_numbers;
+
+    // 2. Fetch all combinations that have already been allocated to players
+    const { data: allocatedData } = await db.from('allocations').select('combination');
+    const allocatedCodes = new Set(allocatedData.map(a => parseInt(a.combination, 10)));
+
+    // 3. Filter the pool to find ONLY unassigned numbers
+    const availableNumbers = pool.filter(num => !allocatedCodes.has(num));
+
+    // Fallback: If your event traffic fills the pool, reset or fallback gracefully
+    if (availableNumbers.length === 0) {
+      console.warn("Pool completely exhausted! Handing out a random code fallback.");
+      return String(pool[Math.floor(Math.random() * pool.length)]).padStart(3, '0');
+    }
+
+    // 4. Safely pick a completely unique number from the remaining subset
+    const picked = availableNumbers[Math.floor(Math.random() * availableNumbers.length)];
+    const uniqueComboString = String(picked).padStart(3, '0');
+
+    // 5. Record the allocation to lock it out for the next player
+    await db.from('allocations').insert({ combination: uniqueComboString });
+    return uniqueComboString;
+
+  } catch(e) {
+    console.warn('Unique allocation failed, falling back:', e);
+    return String(Math.floor(Math.random() * 100) + 1).padStart(3, '0');
+  }
+}
+
+// ── Leaderboard ──────────────────────────────────────────────────
+async function saveScore(nick, sc, ph, eff, combo = null) {
+  if (!db) return;
+  const { error } = await db.from('scores').insert({
+    nickname: nick, score: sc,
+    phase_reached: ph, efficiency: eff,
+    removed: false,
+    ...(combo && { combination: combo })
+  });
+  if (error) {
+    console.warn('Score save failed:', error);
+    if (error.message && error.message.includes('callsign_blocked')) throw new Error('callsign_blocked');
+  }
+}
+
+async function fetchLeaderboard() {
+  if (!db) return [];
+  try {
+    const { data } = await db
+      .from('scores')
+      .select('nickname, score')
+      .eq('removed', false)
+      .order('score', { ascending: false })
+      .limit(10);
+    return data || [];
+  } catch(e) { return []; }
+}
+
+function renderLeaderboard(lb, yourNick = '') {
+  let html = '<div class="leaderboard"><div class="lb-header">★ TOP 10 LEADERBOARD ★</div>';
+  if (!lb || lb.length === 0) {
+    html += '<div style="text-align:center;font-size:6px;color:var(--cyan);padding:8px">NO SCORES YET. BE FIRST!</div>';
+  } else {
+    lb.forEach((entry, i) => {
+      const isYou = entry.nickname === yourNick;
+      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i+1}`;
+      html += `<div class="lb-row${isYou ? ' you' : ''}">
+        <span class="lb-rank">${medal}</span>
+        <span>${entry.nickname}</span>
+        <span class="lb-score">${entry.score}</span>
+      </div>`;
+    });
+  }
+  html += '</div>';
+  return html;
+}
+
+// ── Overlays ──────────────────────────────────────────────────────
+let overlayShown = false;
+function showOverlay(type) {
+  if (overlayShown) return; // prevent double-trigger
+  overlayShown = true;
+  const o = document.getElementById('overlay');
+
+  if (type === 'dead') {
+    o.innerHTML = `
+      <h1 style="background:linear-gradient(180deg,#FC3D21,#A0220F);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">END OF<br>MONTH</h1>
+      <h2 style="color:var(--nasa-red)">${deathReason}</h2>
+      <div class="brief">
+        FINAL ROI: ${score}<br>
+        ACCURACY: ${bulletsShot > 0 ? Math.round((bulletsHit / bulletsShot) * 100) : 0}%<br>
+        PHASE: ${phase}/3
+      </div>
+      <div class="brief" style="color:rgba(200,216,232,0.5);font-size:6px">
+        SUBMIT YOUR SCORE TO THE LEADERBOARD<br>AND TRY AGAIN!
+      </div>
+      <div id="nick-section"></div>
+      <button class="pixel-btn secondary" onclick="restartGame()">RETRY MISSION</button>
+    `;
+    o.style.display = 'flex';
+    promptNicknameAndNumber(score, true);
+  } else if (type === 'won') {
+    o.innerHTML = `
+      <h1 style="background:linear-gradient(180deg,#39FF14,#0B7C0F);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">UNDER<br>BUDGET!</h1>
+      <h2 style="color:var(--green)">★ ROCKET LANDED ★</h2>
+      <div class="brief">
+        SAVINGS BANK: $${budget | 0}K<br>
+        ACCURACY BONUS: ${bulletsShot > 0 ? Math.round((bulletsHit / bulletsShot) * 100) : 0}%<br>
+        FINAL ROI: ${score}<br>
+        FINOPS DECISIONS: ${eventsAnswered}/5 CORRECT
+      </div>
+      <div id="nick-section"></div>
+      <button class="pixel-btn secondary" onclick="restartGame()">FLY AGAIN</button>
+    `;
+    o.style.display = 'flex';
+    promptNicknameAndNumber(score, true);
+  }
+}
+
+async function promptNicknameAndNumber(sc, showCombo, isSkip = false) {
+  const sect = document.getElementById('nick-section');
+  if (!sect) return;
+
+  // Snapshot stats at game-end time (in case user restarts during async save)
+  const finalPhase = phase;
+  const finalEff = efficiency | 0;
+  const finalOdds = currentOdds;
+
+  sect.innerHTML = `
+  <div style="display:flex; flex-direction:column; align-items:center; width:100%; box-sizing:border-box;">
+    <div style="font-size:7px; color:var(--cyan); text-align:center; margin-bottom:6px">
+      ENTER CALLSIGN FOR LEADERBOARD
+    </div>
+    <input class="nick-input" id="nick-input" maxlength="8" placeholder="NO EMAIL OR REAL NAMES" />
+    <button class="pixel-btn" id="submit-nick" style="margin-top:12px; width:100%; max-width:200px;">
+      SUBMIT SCORE
+    </button>
+    ${isSkip ? `<button class="pixel-btn secondary" style="margin-top:8px; width:100%; max-width:200px;" onclick="restartGame()">FLY AGAIN</button>` : ''}
+  </div>
+`;
+  setTimeout(() => {
+    const input = document.getElementById('nick-input');
+    const btn = document.getElementById('submit-nick');
+    if (!input || !btn) return;
+    input.focus();
+
+    btn.onclick = async () => {
+      const nick = (input.value.trim() || 'ANON').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0, 8) || 'ANON';
+      if (callsignIsBad(nick)) {
+        input.value = '';
+        input.placeholder = 'CHOOSE ANOTHER';
+        input.focus();
+        return;
+      }
+      btn.textContent = 'CHECKING...';
+      btn.disabled = true;
+
+      if (db) {
+        const { count } = await db.from('scores')
+          .select('id', { count: 'exact', head: true })
+          .eq('nickname', nick)
+          .eq('removed', false);
+        if (count > 0) {
+          input.value = '';
+          input.placeholder = 'NAME TAKEN — TRY ANOTHER';
+          input.focus();
+          btn.textContent = 'SUBMIT SCORE';
+          btn.disabled = false;
+          return;
+        }
+      }
+
+      btn.textContent = 'SAVING...';
+
+      // Allocate combo first so it can be stored in the score row (1 INSERT, no UPDATE)
+      const combo = await allocateCombinationNumber();
+      try {
+        await saveScore(nick, sc, finalPhase, finalEff, combo);
+      } catch(e) {
+        if (e.message === 'callsign_blocked') {
+          input.value = '';
+          input.placeholder = 'CHOOSE ANOTHER';
+          input.focus();
+          btn.textContent = 'SUBMIT SCORE';
+          btn.disabled = false;
+          return;
+        }
+      }
+
+      if (showCombo) {
+        const lb = await fetchLeaderboard();
+        sect.innerHTML = `
+          ${renderLeaderboard(lb, nick)}
+          <div style="margin-top:12px;padding:16px;border:3px solid var(--gold);background:rgba(255,179,0,0.1);text-align:center;">
+            <div style="font-size:6px;color:var(--cyan);letter-spacing:2px;margin-bottom:8px">YOUR COMBINATION NUMBER</div>
+            <div style="font-size:36px;color:var(--gold);letter-spacing:8px;text-shadow:0 0 20px var(--gold);font-family:'Orbitron',sans-serif;font-weight:900">${combo}</div>
+            <div style="margin-top:12px;padding:10px 14px;background:#fff;border-radius:4px;text-align:center;">
+              <div style="font-size:20px;font-family:'Inter',sans-serif;font-weight:700;color:#1a1a1a;letter-spacing:-0.5px;line-height:1.1">CloudHealth<sup style="font-size:10px">®</sup></div>
+              <div style="font-size:11px;font-family:'Inter',sans-serif;font-weight:400;color:#444;margin-top:2px;letter-spacing:0.5px">by Broadcom</div>
+            </div>
+            <div style="font-size:18px;font-family:'Orbitron',sans-serif;font-weight:900;color:var(--gold);letter-spacing:4px;margin-top:8px;text-shadow:0 0 10px var(--gold)">BOOTH E8</div>
+            <div style="font-size:9px;color:rgba(200,216,232,0.85);margin-top:8px;line-height:2">
+              📸 TAKE A SCREENSHOT NOW!<br>
+              TRY THE LOCK · WIN THE PRIZE.
+            </div>
+            <div style="margin-top:8px;font-size:6px;color:var(--green)">
+              CHANCE OF WINNING: 1 IN ${finalOdds}
+            </div>
+          </div>
+          ${isSkip ? `<div style="display:flex;justify-content:center;margin-top:14px"><button class="pixel-btn secondary" style="width:100%;max-width:200px" onclick="restartGame()">FLY AGAIN</button></div>` : ''}
+        `;
+      } else {
+        const lb = await fetchLeaderboard();
+        sect.innerHTML = renderLeaderboard(lb, nick);
+      }
+    };
+  }, 100);
+}
+
+function restartGame() {
+  score = 0; budget = STARTING_BUDGET; efficiency = 80; phase = 1;
+  frame = 0; phaseProgress = 0;
+  asteroids = []; answerAsteroids = []; coins = []; bullets = []; particles = []; explosions = [];
+  spendTags = [];
+  savingsBonus = 0;
+  deathReason = 'BUDGET DEPLETED';
+  coinsCollected = { visibility: 0, governance: 0, savings: 0 };
+  eventTriggered = false; eventsAnswered = 0; questionIndex = 0;
+  questionActive = false; currentQuestion = null;
+  questionWarning = false; questionWarningTimer = 0;
+  waveActive = false; waveClearTimer = 0; questionsAnsweredThisGame = 0;
+  waveTimer = 0; waveAsteroidsSpawned = 0; waveCompleted = false;
+  rocketMoving = false; rocketMoveTimer = 0;
+  rocketCrashed = false; rocketCrashTimer = 0;
+  gameEndAnimation = false; gameEndTimer = 0; gameEndType = '';
+  bulletsShot = 0; bulletsHit = 0;
+  overlayShown = false;
+  pickGameQuestions(); // fresh 5 from pool of 30
+  initShip();
+  ship.bullets = []; ship.shootCooldown = 0; ship.invincible = 0; ship.savingsBuff = 0;
+  state = 'playing';
+  paused = false;
+  document.getElementById('pause-overlay').classList.remove('show');
+  document.getElementById('pause-btn').style.display = 'block';
+  updatePhase();
+  document.getElementById('budget-bar').classList.remove('crit');
+  document.getElementById('overlay').style.display = 'none';
+  document.getElementById('event-modal').classList.remove('show');
+  document.getElementById('question-display').classList.remove('show');
+  document.getElementById('wave-announce').style.opacity = '0';
+  
+  // Game will start with first question through normal flow
+}
+
+// ── Input ──────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  keys[e.key] = true;
+  if (e.key === ' ') e.preventDefault();
+  if ((e.key === 'Escape' || e.key === 'p' || e.key === 'P') && state === 'playing' && !gameEndAnimation) {
+    paused ? resumeGame() : pauseGame();
+  }
+});
+document.addEventListener('keyup', e => { keys[e.key] = false; });
+
+// ── Pause / Resume / Exit ──────────────────────────────────────────
+function pauseGame() {
+  if (state !== 'playing' || paused || gameEndAnimation) return;
+  paused = true;
+  touch.left = touch.right = touch.fire = false;  // drop held buttons
+  ['left-btn','right-btn','fire-btn'].forEach(id =>
+    document.getElementById(id).classList.remove('pressed'));
+  document.getElementById('pause-overlay').classList.add('show');
+}
+function resumeGame() {
+  if (!paused) return;
+  paused = false;
+  document.getElementById('pause-overlay').classList.remove('show');
+}
+function exitToStart() {
+  location.reload(); // back to the pristine start page
+}
+document.getElementById('pause-btn').addEventListener('click', pauseGame);
+document.getElementById('resume-btn').addEventListener('click', resumeGame);
+document.getElementById('exit-btn').addEventListener('click', exitToStart);
+
+// On-screen buttons — pointer events cover touch, mouse, and pen with one path.
+// Hold to keep the flag set; release/cancel/leave clears it.
+function holdButton(id, prop) {
+  const btn = document.getElementById(id);
+  const press   = (e) => { e.preventDefault(); touch[prop] = true;  btn.classList.add('pressed'); };
+  const release = (e) => { e.preventDefault(); touch[prop] = false; btn.classList.remove('pressed'); };
+  btn.addEventListener('pointerdown', press);
+  btn.addEventListener('pointerup', release);
+  btn.addEventListener('pointercancel', release);
+  btn.addEventListener('pointerleave', release);
+}
+holdButton('left-btn', 'left');
+holdButton('right-btn', 'right');
+holdButton('fire-btn', 'fire');
+
+document.getElementById('start-btn').addEventListener('click', restartGame);
+
+function skipToCombo() {
+  efficiency = 0;
+  overlayShown = true;
+  const o = document.getElementById('overlay');
+  o.innerHTML = `
+    <h2 style="font-family:'Press Start 2P',monospace;font-size:14px;color:var(--cyan);text-align:center;line-height:1.6">
+      SKIP MISSION<br>
+      <span style="font-size:8px;color:rgba(200,216,232,0.7)">GET YOUR COMBO NUMBER</span>
+    </h2>
+    <div id="nick-section"></div>
+  `;
+  promptNicknameAndNumber(0, true, true);
+}
+document.getElementById('skip-btn').addEventListener('click', skipToCombo);
+
     <p class="plain">
       <a href="https://www.arrow.com/globalecs/en/cloudhealth/" target="_blank" rel="noopener">https://www.arrow.com/globalecs/en/cloudhealth/</a>
     </p>
